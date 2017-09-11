@@ -1,0 +1,185 @@
+#!/bin/sh
+# -*- tcl -*- \
+exec tclsh "$0"  ${1+"$@"}
+
+package require Tcl 8.2
+package require cmdline
+
+proc acceptConn {sock addr port} {
+    fconfigure $sock -blocking 0 -buffering line
+    puts $sock "Hello $addr:$port"
+    fileevent $sock readable [list serveCmd $sock]
+}
+
+proc clearCaches {} {
+    set now [clock seconds]
+    set staleTime [expr $now - 5]
+    foreach chan [array names ::incompleteCommandStart] {
+	if {$::incompleteCommandStart($chan) < $staleTime} {
+	    unset -nocomplain ::incompleteCommand($chan)
+	    unset -nocomplain ::incompleteCommandStart($chan)
+	}
+    }
+    return $now
+}
+
+proc getCommand {chan} {
+    set now [clearCaches]
+    append ::incompleteCommand($chan) [gets $chan]
+    if {[info complete $::incompleteCommand($chan)]} {
+	set cmd $::incompleteCommand($chan)
+	unset -nocomplain ::incompleteCommand($chan)
+	unset -nocomplain ::incompleteCommandStart($chan)
+	return $cmd
+    } else {
+	checkVar ::incompleteCommandStart($chan) $now
+	if {[eof $chan]} {close $chan}
+	return ""
+    }
+}
+
+proc serveCmd {chan} {
+    set cmd [getCommand $chan]
+    if {$cmd eq ""} return
+    switch -regexp -matchvar matches $cmd {
+	{^\s*state\M} {
+	    puts $chan [concat [array get ::recordState] [array get ::config siteId] [array get ::config headset]]
+	}
+	{^\s*set\s+(\S.*)} {
+	    updateArray ::recordState {name uid} [lindex $matches 1]
+	}
+	{^\s*start\s+(\S.*)} {
+	    if {$::recordState(state) == "ready"} {
+		array set meta [lindex $matches 1]
+		if {[info exists meta(employeeId)]} {
+		    set record(employeeId) $meta(employeeId)
+		} else {
+		    lappend errors needEmployeeId
+		}
+	    set ::recordLength [lindex $matches 1]
+	    startRecord
+	    puts $chan [array get ::recordState]
+	}
+	{^\s*start\M} {
+	    puts $chan "Expected 'start NUMBER', got '$cmd'"
+	}
+	default {
+	    puts $chan "Unrecognized command: $cmd"
+	}
+    }   
+}
+
+proc getJabraDev {} {return "jabra"}
+
+proc doStartRecord {} {
+    # TODO really start record
+}
+
+proc doStopRecord {} {
+    # TODO really stop record and queue file
+}
+
+proc setErrorState {msg} {
+    unset -nocomplain ::recordState(recordTime)
+    if {$msg eq "noDevice"} {
+	set ::recordState(state) noDevice
+    } else {
+	set ::recordState(errorMessage) $msg
+	set ::recordState(state) error
+    }
+}
+
+proc startRecord {} {
+    if {[catch doStartRecord errMsg]} {
+	setErrorState errMsg
+    } else {
+	set now [clock seconds]
+	set ::recordChunkTime $now
+	set ::recordStartTime $now
+	set ::recordState(recordTime) 0
+	set ::recordState(state) recording
+    }
+}
+
+proc stopRecord {} {
+    doStopRecord
+    array unset ::recordState recordTime
+    if {[getJabraDev] eq ""} {
+	set ::recordState(state) noDevice
+    } else {
+	set ::recordState(state) ready
+    }
+}
+
+proc startNextChunk {} {
+    doStopRecord
+    if {[catch doStartRecord errMsg]} {
+	setErrorState errMsg
+    } else {
+	set ::recordChunkTime [clock seconds]
+    }
+}
+
+proc checkVar {var val} {
+    upvar $var v
+    if {![info exists v]} {set v $val}
+}
+
+proc checkRecordState {} {
+    if {![info exists ::recordState(state)]} {set ::recordState(state) noDevice}
+    switch $::recordState(state) {
+	noDevice {
+	    if {[getJabraDev] ne ""} {set ::recordState(state) ready}
+	}
+	ready {
+	    if {[getJabraDev] eq ""} {set ::recordState(state) noDevice}
+	}
+	recording {
+	    set now [clock seconds]
+	    checkVar ::recordStartTime $now 
+	    checkVar ::recordChunkTime $now
+	    set ::recordState(recordTime) [expr $now - $::recordStartTime]
+	    if {$::recordState(recordTime) >= $::recordLength} {
+		stopRecord
+	    } elseif {$now - $::recordChunkTime >= $::recordChunkLength} {
+		startNextChunk
+	    }
+	}
+    }
+    after 500 checkRecordState
+}
+
+proc updateArray {arr allowNames pairList} {
+    upvar $arr a
+    foreach {name value} $pairList {
+	if {[lsearch -exact $allowNames $name] >= 0} {
+	    set a($name) $value
+	}
+    }
+}
+
+proc main {} {
+    array set ::recordState {}
+    set optDesc {
+	{headset.arg "" "headset number, mandatory"}
+	{port.arg 17119 "listen on TCP port"}
+    }
+    set usageString "options"
+    if {[catch {::cmdline::getoptions ::argv $optDesc $usageString} res]} {
+	puts stderr $res
+	exit 1
+    }
+    array set ::opt $res
+    if {$::opt(headset) > 0} {set ::recordState(headset) $::opt(headset)}
+    if {![info exists ::recordState(headset)]} {
+	puts stderr "Headset number is not specified.\n[::cmdline::usage $optDesc $usageString]"
+	exit 2
+    }
+    set ::recordChunkLength 180
+    checkRecordState
+    puts "Listening on port $::opt(port)"
+    socket -server acceptConn $::opt(port)
+    vwait forever
+}
+
+main
