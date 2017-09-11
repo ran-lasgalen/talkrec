@@ -11,7 +11,7 @@ proc acceptConn {sock addr port} {
     fileevent $sock readable [list serveCmd $sock]
 }
 
-proc clearCaches {} {
+proc cleanupIncompleteCommandCache {} {
     set now [clock seconds]
     set staleTime [expr $now - 5]
     foreach chan [array names ::incompleteCommandStart] {
@@ -24,7 +24,7 @@ proc clearCaches {} {
 }
 
 proc getCommand {chan} {
-    set now [clearCaches]
+    set now [cleanupIncompleteCommandCache]
     append ::incompleteCommand($chan) [gets $chan]
     if {[info complete $::incompleteCommand($chan)]} {
 	set cmd $::incompleteCommand($chan)
@@ -38,33 +38,72 @@ proc getCommand {chan} {
     }
 }
 
+proc checkNames {arr names} {
+    upvar $arr a
+    set errors {}
+    foreach name $names {
+	if {![info exists a($name)]} {lappend errors need:$name}
+    }
+    return $errors
+}
+
+proc checkRE {var name re} {
+    upvar $var v
+    if {![info exists v]} {
+	return [list need:$name]
+    } elseif {[regexp "^$re\$" $v]} {
+	return {}
+    } else {
+	return [list "re:$name!$re"]
+    }
+}
+
+proc tellState {chan} {puts $chan [concat [array get ::recordState] [array get ::config siteId] [array get ::config headset]]}
+
+proc tellErrors {chan errors} {puts $chan [list errors $errors]}
+
 proc serveCmd {chan} {
     set cmd [getCommand $chan]
     if {$cmd eq ""} return
     switch -regexp -matchvar matches $cmd {
-	{^\s*state\M} {
-	    puts $chan [concat [array get ::recordState] [array get ::config siteId] [array get ::config headset]]
-	}
+	{^\s*state\M} {tellState $chan}
 	{^\s*set\s+(\S.*)} {
-	    updateArray ::recordState {name uid} [lindex $matches 1]
+	    set params [lindex $matches 1]
+	    updateArray ::recordState {name employeeId} $params
+	    updateArray ::config {siteId} $params
+	    tellState $chan
 	}
 	{^\s*start\s+(\S.*)} {
+	    set errors {}
 	    if {$::recordState(state) == "ready"} {
-		array set meta [lindex $matches 1]
-		if {[info exists meta(employeeId)]} {
-		    set record(employeeId) $meta(employeeId)
+		# запуск записи возможен только из состояния "готов"
+		set params [lindex $matches 1]
+		array set pa $params
+		updateArray ::recordState {name employeeId} $params
+		set rsErrors [checkNames ::recordState {name employeeId}]
+		set cfErrors [checkNames ::config {siteId headset}]
+		set tmErrors [checkRE ::recordState(time) time {\d+}]
+		if {![info exists pa(time)]} {
+		    set tmErrors [list "need:time"]
+		} elseif {$pa(time) <= 0} {
+		    set tmErrors [list "cond:time>0"]
 		} else {
-		    lappend errors needEmployeeId
+		    set ::recordLength $pa(time)
+		    set tmErrors {}
 		}
-	    set ::recordLength [lindex $matches 1]
-	    startRecord
-	    puts $chan [array get ::recordState]
-	}
-	{^\s*start\M} {
-	    puts $chan "Expected 'start NUMBER', got '$cmd'"
+		set errors [concat $rsErrors $cfErrors $tmErrors]
+		if {[llength $errors]} {
+		    tellErrors $chan $errors
+		} else {
+		    startRecord
+		    tellState $chan
+		}
+	    } else {
+		tellErrors $chan [list "wrongState:$::recordState(state)"]]
+	    }
 	}
 	default {
-	    puts $chan "Unrecognized command: $cmd"
+	    tellErrors $chan [list "Unrecognized command: $cmd"]]
 	}
     }   
 }
@@ -161,8 +200,9 @@ proc updateArray {arr allowNames pairList} {
 proc main {} {
     array set ::recordState {}
     set optDesc {
-	{headset.arg "" "headset number, mandatory"}
-	{port.arg 17119 "listen on TCP port"}
+	{headset.arg "" "номер гарнитуры, обязательный"}
+	{site.arg "" "идентификатор салона"}
+	{port.arg 17119 "слушать на этом порту TCP"}
     }
     set usageString "options"
     if {[catch {::cmdline::getoptions ::argv $optDesc $usageString} res]} {
@@ -170,8 +210,8 @@ proc main {} {
 	exit 1
     }
     array set ::opt $res
-    if {$::opt(headset) > 0} {set ::recordState(headset) $::opt(headset)}
-    if {![info exists ::recordState(headset)]} {
+    if {$::opt(headset) > 0} {set ::config(headset) $::opt(headset)}
+    if {![info exists ::config(headset)]} {
 	puts stderr "Headset number is not specified.\n[::cmdline::usage $optDesc $usageString]"
 	exit 2
     }
