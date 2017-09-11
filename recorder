@@ -26,14 +26,17 @@ proc cleanupIncompleteCommandCache {} {
 proc getCommand {chan} {
     set now [cleanupIncompleteCommandCache]
     append ::incompleteCommand($chan) [gets $chan]
-    if {[info complete $::incompleteCommand($chan)]} {
-	set cmd $::incompleteCommand($chan)
+    set cmd $::incompleteCommand($chan)
+    if {[info complete $cmd] && $cmd ne ""} {
 	unset -nocomplain ::incompleteCommand($chan)
 	unset -nocomplain ::incompleteCommandStart($chan)
 	return $cmd
     } else {
-	checkVar ::incompleteCommandStart($chan) $now
-	if {[eof $chan]} {close $chan}
+	if {[eof $chan]} {
+	    close $chan
+	} else {
+	    checkVar ::incompleteCommandStart($chan) $now
+	}
 	return ""
     }
 }
