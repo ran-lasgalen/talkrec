@@ -70,10 +70,23 @@ proc serveCmd {chan} {
     if {$cmd eq ""} return
     switch -regexp -matchvar matches $cmd {
 	{^\s*state\M} {tellState $chan}
+	{^internals$} {puts $chan [list ::record [array get ::record]]}
 	{^\s*set\s+(\S.*)} {
 	    set params [lindex $matches 1]
 	    updateArray ::recordState {name employeeId} $params
 	    updateArray ::config {siteId} $params
+	    tellState $chan
+	}
+	{^\s*clearError\s*$} {
+	    if {$::recordState(state) eq "error"} {
+		set ::recordState(state) noDevice
+		unset ::recordState(errorMessage)
+		if {[catch getJabraDev msg]} {setErrorState $msg}
+		tellState $chan
+	    }
+	}
+	{^\s*stop\s*$} {
+	    stopRecord
 	    tellState $chan
 	}
 	{^\s*start\s+(\S.*)} {
@@ -91,7 +104,7 @@ proc serveCmd {chan} {
 		} elseif {$pa(time) <= 0} {
 		    set tmErrors [list "cond:time>0"]
 		} else {
-		    set ::recordLength $pa(time)
+		    set ::record(length) $pa(time)
 		    set tmErrors {}
 		}
 		set errors [concat $rsErrors $cfErrors $tmErrors]
@@ -111,14 +124,61 @@ proc serveCmd {chan} {
     }   
 }
 
-proc getJabraDev {} {return "jabra"}
-
-proc doStartRecord {recordFileName} {
-    # TODO really start record
+proc getJabraDev {} {
+    set ::record(soundSystem) $::opt(snd)
+    unset -nocomplain ::record(device)
+    switch $::record(soundSystem) {
+	pulse {
+	    set pipe [open "| pactl list short sources"]
+	    while {![eof $pipe]} {
+		if {[regexp {^\d+\s+(\S+)} [gets $pipe] dummy dev] && [regexp $::opt(dev) $dev]} {
+		    close $pipe
+		    set ::record(device) $dev
+		    return
+		}
+	    }
+	    close $pipe
+	    error noDevice
+	}
+	fake {set ::record(device) $::opt(dev)}
+	default {error "Unsupported sound system $::record(soundSystem)"}
+    }
 }
 
-proc doStopRecord {recordFileName} {
-    # TODO really stop record and queue file
+proc doStartChunk {} {
+    switch $::record(soundSystem) {
+	pulse {
+	    set ::record(pid) [exec parecord --rate=16000 --channels=1 --device=$::record(device) $::record(file) 2> $::record(file).stderr &]
+	}
+	fake {}
+	default {error "Unsupported sound system $::record(soundSystem)"}
+    }
+}
+
+proc doStartRecord {} {
+    # TODO make pre-record settings according to soundSystem
+    doStartChunk
+}
+
+proc doStopRecord {} {
+    switch $::record(soundSystem) {
+	pulse {
+	    catch {exec kill $::record(pid)}
+	    if {[file exists $::record(file).stderr] && [file size $::record(file).stderr] == 0} {
+		file delete $::record(file).stderr
+	    }
+	}
+	fake {
+	    file copy -- $::record(device) $::record(file)
+	}
+    }
+    if {[file exists $::record(file)]} {
+	set fh [open $::record(file).meta.tmp w]
+	puts $fh "employeeId=$::recordState(employeeId)"
+	puts $fh "name=$::recordState(name)"
+	close $fh
+	file rename $::record(file).meta.tmp $::record(file).meta
+    }
 }
 
 proc setErrorState {msg} {
@@ -132,42 +192,55 @@ proc setErrorState {msg} {
 }
 
 proc genRecordFileName {now} {
-    set t [clock format "%Y%m%d_%H%M%S" $now]
-    return [format "%s_%s_%d_%s.wav" $t $::config(siteId) $::config(headset) $::recordId]
+    set t [clock format $now -format "%Y%m%d_%H%M%S"]
+    return [format "%s_%s_%d_%s.wav" $t $::config(siteId) $::config(headset) $::record(id)]
+}
 
 proc startRecord {} {
     set now [clock seconds]
-    set ::recordId [format "%08x" $now]
-    set ::recordFileName [genRecordFileName $now]
-    if {[catch {doStartRecord $::recordFileName} errMsg]} {
-	setErrorState errMsg
+    set ::record(id) [format "%08x" $now]
+    set ::record(file) [genRecordFileName $now]
+    if {[catch doStartRecord errMsg]} {
+	setErrorState $errMsg
     } else {
 	set now [clock seconds]
-	set ::recordChunkTime $now
-	set ::recordStartTime $now
+	set ::record(chunkTime) $now
+	set ::record(startTime) $now
 	set ::recordState(recordTime) 0
 	set ::recordState(state) recording
     }
 }
 
-proc stopRecord {} {
-    doStopRecord $::recordFileName
-    array unset ::recordState recordTime
-    if {[getJabraDev] eq ""} {
-	set ::recordState(state) noDevice
-    } else {
-	set ::recordState(state) ready
+proc checkRecordingProcess {} {
+    switch $::record(soundSystem) {
+	pulse {
+	    if {[catch {exec kill -0 $::record(pid)}]} {
+		set fh [open $::record(file).stderr]
+		set errMsg [read $fh]
+		close $fh
+		file delete -- $::record(file).stderr $::record(file)
+		setErrorState $errMsg
+		unset ::record
+	    }
+	}
+	fake {}
     }
 }
 
+proc stopRecord {} {
+    doStopRecord
+    unset ::recordState(recordTime)
+    if {[catch getJabraDev msg]} {setErrorState $msg} else {set ::recordState(state) ready}
+}
+
 proc startNextChunk {} {
-    doStopRecord $::recordFileName
+    doStopRecord
     set now [clock seconds]
-    set ::recordFileName [genRecordFileName $now]
-    if {[catch {doStartRecord $::recordFileName} errMsg]} {
-	setErrorState errMsg
+    set ::record(file) [genRecordFileName $now]
+    if {[catch doStartChunk errMsg]} {
+	setErrorState $errMsg
     } else {
-	set ::recordChunkTime $now
+	set ::record(chunkTime) $now
     }
 }
 
@@ -180,20 +253,26 @@ proc checkRecordState {} {
     if {![info exists ::recordState(state)]} {set ::recordState(state) noDevice}
     switch $::recordState(state) {
 	noDevice {
-	    if {[getJabraDev] ne ""} {set ::recordState(state) ready}
+	    if {[catch getJabraDev msg]} {
+		setErrorState $msg
+	    } else {
+		set ::recordState(state) ready
+	    }
 	}
 	ready {
-	    if {[getJabraDev] eq ""} {set ::recordState(state) noDevice}
+	    if {[catch getJabraDev msg]} {setErrorState $msg}
 	}
 	recording {
 	    set now [clock seconds]
-	    checkVar ::recordStartTime $now 
-	    checkVar ::recordChunkTime $now
-	    set ::recordState(recordTime) [expr $now - $::recordStartTime]
-	    if {$::recordState(recordTime) >= $::recordLength} {
+	    checkVar ::record(startTime) $now 
+	    checkVar ::record(chunkTime) $now
+	    set ::recordState(recordTime) [expr $now - $::record(startTime)]
+	    if {$::recordState(recordTime) >= $::record(length)} {
 		stopRecord
-	    } elseif {$now - $::recordChunkTime >= $::recordChunkLength} {
+	    } elseif {$now - $::record(chunkTime) >= $::recordChunkLength} {
 		startNextChunk
+	    } else {
+		checkRecordingProcess
 	    }
 	}
     }
@@ -215,6 +294,8 @@ proc main {} {
 	{headset.arg "" "номер гарнитуры, обязательный"}
 	{site.arg "" "идентификатор салона"}
 	{port.arg 17119 "слушать на этом порту TCP"}
+	{snd.arg "pulse" "звуковая система (pulse, fake)"}
+	{dev.arg "input.usb-GN_Netcom_A_S_Jabra_PRO_9460" "устройство записи, зависит от -snd\n\tдля pulse — регулярное выражение\n\tдля fake — имя файла"}
     }
     set usageString "options"
     if {[catch {::cmdline::getoptions ::argv $optDesc $usageString} res]} {
@@ -227,7 +308,7 @@ proc main {} {
 	puts stderr "Headset number is not specified.\n[::cmdline::usage $optDesc $usageString]"
 	exit 2
     }
-    set ::recordChunkLength 180
+    set ::recordChunkLength 20
     checkRecordState
     puts "Listening on port $::opt(port)"
     socket -server acceptConn $::opt(port)
