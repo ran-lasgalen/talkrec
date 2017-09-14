@@ -113,11 +113,11 @@ proc serveCmd {chan} {
 
 proc getJabraDev {} {return "jabra"}
 
-proc doStartRecord {} {
+proc doStartRecord {recordFileName} {
     # TODO really start record
 }
 
-proc doStopRecord {} {
+proc doStopRecord {recordFileName} {
     # TODO really stop record and queue file
 }
 
@@ -131,8 +131,15 @@ proc setErrorState {msg} {
     }
 }
 
+proc genRecordFileName {now} {
+    set t [clock format "%Y%m%d_%H%M%S" $now]
+    return [format "%s_%s_%d_%s.wav" $t $::config(siteId) $::config(headset) $::recordId]
+
 proc startRecord {} {
-    if {[catch doStartRecord errMsg]} {
+    set now [clock seconds]
+    set ::recordId [format "%08x" $now]
+    set ::recordFileName [genRecordFileName $now]
+    if {[catch {doStartRecord $::recordFileName} errMsg]} {
 	setErrorState errMsg
     } else {
 	set now [clock seconds]
@@ -144,7 +151,7 @@ proc startRecord {} {
 }
 
 proc stopRecord {} {
-    doStopRecord
+    doStopRecord $::recordFileName
     array unset ::recordState recordTime
     if {[getJabraDev] eq ""} {
 	set ::recordState(state) noDevice
@@ -154,11 +161,13 @@ proc stopRecord {} {
 }
 
 proc startNextChunk {} {
-    doStopRecord
-    if {[catch doStartRecord errMsg]} {
+    doStopRecord $::recordFileName
+    set now [clock seconds]
+    set ::recordFileName [genRecordFileName $now]
+    if {[catch {doStartRecord $::recordFileName} errMsg]} {
 	setErrorState errMsg
     } else {
-	set ::recordChunkTime [clock seconds]
+	set ::recordChunkTime $now
     }
 }
 
