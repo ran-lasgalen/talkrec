@@ -1,16 +1,32 @@
 #!/bin/bash
+server=192.168.1.92
+
 shopt -s nullglob
 shopt -u failglob
 usage () {
-	cat <<EOF
-$0 файл_с_паролем [сервер]
+	cat >&2 <<EOF
+Использование: $0 файл_с_паролем [сервер]
 сервер по умолчанию 192.168.1.92
-имя файла с паролем (без папки)
+имя файла с паролем (без папки) - имя пользователя
 EOF
+	exit 1
+}
 pw_file="$1"
-
-while true
-do
-	for f in *.wav
-	do
-		
+[ -n "$pw_file" ] || usage
+if [ ! -r "$pw_file" ]; then
+	echo "Не удалось прочесть файл $pw_file" >&2
+	exit 2
+fi
+user="${pw_file##*/}"
+if [ -n "$2" ]; then server="$2"; fi
+while true; do
+	for f in *.wav; do
+		if [ -f "$f.meta" ]; then
+			rsync -t --password-file "$pw_file" -- "$f" "$f.meta" "rsync://$user@$server/queue/" &&
+				touch -- "$f.flag" &&
+				rsync -t --password-file "$pw_file" -- "$f.flag" "rsync://$user@$server/queue/" &&
+				rm -f -- "$f" "$f.meta" "$f.flag"
+		fi
+	done
+	sleep 12
+done

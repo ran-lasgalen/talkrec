@@ -296,8 +296,6 @@ proc main {} {
 	{port.arg 17119 "слушать на этом порту TCP"}
 	{snd.arg "pulse" "звуковая система (pulse, fake)"}
 	{dev.arg "input.usb-GN_Netcom_A_S_Jabra_PRO_9460" "устройство записи, зависит от -snd\n\tдля pulse — регулярное выражение\n\tдля fake — имя файла"}
-	{server.arg "192.168.1.92" "адрес сервера распознавания"}
-	{auth.arg "" "имя файла с паролем к серверу, оно же имя пользователя"}
     }
     set usageString "параметры"
     if {[catch {::cmdline::getoptions ::argv $optDesc $usageString} res]} {
@@ -308,10 +306,6 @@ proc main {} {
     if {$::opt(headset) > 0} {set ::config(headset) $::opt(headset)}
     if {![info exists ::config(headset)]} {
 	puts stderr "Не указан номер гарнитуры.\n[::cmdline::usage $optDesc $usageString]"
-	exit 2
-    }
-    if {$::opt(auth) eq ""} {
-	puts stderr "Не указаны данные для авторизации на сервере распознавания.\n[::cmdline::usage $optDesc $usageString]"
 	exit 2
     }
     set ::recordChunkLength 20
