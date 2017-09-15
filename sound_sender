@@ -1,0 +1,16 @@
+#!/bin/bash
+shopt -s nullglob
+shopt -u failglob
+usage () {
+	cat <<EOF
+$0 файл_с_паролем [сервер]
+сервер по умолчанию 192.168.1.92
+имя файла с паролем (без папки)
+EOF
+pw_file="$1"
+
+while true
+do
+	for f in *.wav
+	do
+		
