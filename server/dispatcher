@@ -1,0 +1,41 @@
+#!/bin/sh
+# -*- tcl -*- \
+exec tclsh "$0" ${1+"$@"}
+
+proc feedFile {soundFile} {
+    set pipe [open {| echo test recognition} r]
+    set textH [open $soundFile.text w]
+    puts $textH [read $pipe]
+    close $textH
+    close $pipe
+}
+
+proc runQueue {} {
+    set flagFiles [glob -nocomplain -directory $::config(workdir) *.flag]
+    foreach flagFile $flagFiles {
+	set soundFile [file rootname $flagFile]
+	if [catch {feedFile $soundFile} err] {
+	    pust stderr $err
+	} else {
+	    file delete -- $flagFile $soundFile
+	}
+    }
+    after 500 runQueue
+}
+
+proc readConfig {configFile} {
+    array set ::config {workdir ~/queue}
+    array set ::servers {localhost 1}
+}
+
+proc main {} {
+    if {[catch {readConfig ~/.config/talkrec/dispatcher.tcl} err]} {
+	puts stderr $err
+	exit 2
+    }
+    file mkdir $::config(workdir)
+    runQueue
+    vwait forever
+}
+
+main
