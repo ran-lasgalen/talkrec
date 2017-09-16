@@ -1,6 +1,6 @@
 #!/bin/bash
 server=192.168.1.92
-workdir="$HOME/talks"
+workdir=.
 
 config="$HOME/.config/talkrec/sound_sender.bash"
 shopt -s nullglob
