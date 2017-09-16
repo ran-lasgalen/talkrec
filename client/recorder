@@ -1,9 +1,6 @@
 #!/bin/sh
 # -*- tcl -*- \
-exec tclsh "$0"  ${1+"$@"}
-
-package require Tcl 8.2
-package require cmdline
+exec tclsh "$0" ${1+"$@"}
 
 proc acceptConn {sock addr port} {
     fconfigure $sock -blocking 0 -buffering line
@@ -125,13 +122,13 @@ proc serveCmd {chan} {
 }
 
 proc getJabraDev {} {
-    set ::record(soundSystem) $::opt(snd)
+    set ::record(soundSystem) $::config(soundSystem)
     unset -nocomplain ::record(device)
     switch $::record(soundSystem) {
 	pulse {
 	    set pipe [open "| pactl list short sources"]
 	    while {![eof $pipe]} {
-		if {[regexp {^\d+\s+(\S+)} [gets $pipe] dummy dev] && [regexp $::opt(dev) $dev]} {
+		if {[regexp {^\d+\s+(\S+)} [gets $pipe] dummy dev] && [regexp $::config(deviceRE) $dev]} {
 		    close $pipe
 		    set ::record(device) $dev
 		    return
@@ -140,7 +137,7 @@ proc getJabraDev {} {
 	    close $pipe
 	    error noDevice
 	}
-	fake {set ::record(device) $::opt(dev)}
+	fake {set ::record(device) $::config(fakeRecord)}
 	default {error "Unsupported sound system $::record(soundSystem)"}
     }
 }
@@ -288,30 +285,23 @@ proc updateArray {arr allowNames pairList} {
     }
 }
 
+proc readConfig {file} {
+    array set ::config {port 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460}
+    source $file
+    if {![info exists ::config(headset)]} {error "Не указан номер гарнитуры (::config(headset))"}
+    file mkdir $::config(workdir)
+    cd $::config(workdir)
+}
+
 proc main {} {
     array set ::recordState {}
-    set optDesc {
-	{headset.arg "" "номер гарнитуры, обязательный"}
-	{site.arg "" "идентификатор салона"}
-	{port.arg 17119 "слушать на этом порту TCP"}
-	{snd.arg "pulse" "звуковая система (pulse, fake)"}
-	{dev.arg "input.usb-GN_Netcom_A_S_Jabra_PRO_9460" "устройство записи, зависит от -snd\n\tдля pulse — регулярное выражение\n\tдля fake — имя файла"}
-    }
-    set usageString "параметры"
-    if {[catch {::cmdline::getoptions ::argv $optDesc $usageString} res]} {
-	puts stderr $res
-	exit 1
-    }
-    array set ::opt $res
-    if {$::opt(headset) > 0} {set ::config(headset) $::opt(headset)}
-    if {![info exists ::config(headset)]} {
-	puts stderr "Не указан номер гарнитуры.\n[::cmdline::usage $optDesc $usageString]"
+    if {[catch {readConfig ~/.config/talkrec/recorder.tcl} err]} {
+	puts stderr $err
 	exit 2
     }
-    set ::recordChunkLength 20
+    set ::recordChunkLength 18
     checkRecordState
-    puts "Listening on port $::opt(port)"
-    socket -server acceptConn $::opt(port)
+    socket -server acceptConn $::config(port)
     vwait forever
 }
 

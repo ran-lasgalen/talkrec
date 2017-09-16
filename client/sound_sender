@@ -1,24 +1,23 @@
 #!/bin/bash
 server=192.168.1.92
+workdir="$HOME/talks"
 
+config="$HOME/.config/talkrec/sound_sender.bash"
 shopt -s nullglob
 shopt -u failglob
-usage () {
-	cat >&2 <<EOF
-Использование: $0 файл_с_паролем [сервер]
-сервер по умолчанию 192.168.1.92
-имя файла с паролем (без папки) - имя пользователя
-EOF
-	exit 1
-}
-pw_file="$1"
-[ -n "$pw_file" ] || usage
+confdir=$(dirname "$config")
+. "$config"
 if [ ! -r "$pw_file" ]; then
-	echo "Не удалось прочесть файл $pw_file" >&2
+	echo "Невозможно прочесть файл $pw_file" >&2
 	exit 2
 fi
-user="${pw_file##*/}"
-if [ -n "$2" ]; then server="$2"; fi
+user=$(basename "$pw_file" .pw)
+if [ -z "$user" ]; then
+	echo "Невозможно определить пользователя на $server по имени файла $pw_file" >&2
+	exit 2
+fi
+mkdir -p "$workdir" || exit 2
+cd "$workdir" || exit 2
 while true; do
 	for f in *.wav; do
 		if [ -f "$f.meta" ]; then
