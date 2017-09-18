@@ -3,21 +3,29 @@
 exec tclsh "$0" ${1+"$@"}
 
 proc feedFile {soundFile} {
-    set pipe [open {| echo test recognition} r]
-    set textH [open $soundFile.text w]
-    puts $textH [read $pipe]
+    puts "Recognizing $soundFile..."
+    set pipe [open [list | asrclient-cli.py --key internal --server localhost --ipv4 --silent $soundFile] r]
+    set textH [open $soundFile.tmp w]
+    while {![eof $pipe]} {
+	set line [gets $pipe]
+	if {[regexp {^from } $line] || [regexp {^\s*$} $line]} {} else {puts $textH $line}
+    }
     close $textH
     close $pipe
+    file rename -force -- $soundFile.tmp $soundFile.text
+    puts "$soundFile -> $soundFile.text"
 }
 
 proc runQueue {} {
-    set flagFiles [glob -nocomplain -directory $::config(workdir) *.flag]
+    set flagFiles [glob -nocomplain -directory [file normalize $::config(workdir)] *.flag]
     foreach flagFile $flagFiles {
 	set soundFile [file rootname $flagFile]
+	file delete -- $flagFile
 	if [catch {feedFile $soundFile} err] {
-	    pust stderr $err
+	    file delete -- $soundFile.tmp
+	    puts stderr $err
 	} else {
-	    file delete -- $flagFile $soundFile
+	    file delete -- $soundFile
 	}
     }
     after 500 runQueue
