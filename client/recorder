@@ -59,33 +59,37 @@ proc checkRE {var name re} {
     }
 }
 
-proc tellState {chan} {puts $chan [concat [array get ::recordState] [array get ::config siteId] [array get ::config headset]]}
+proc tellState {chan replyId} {puts $chan [concat $replyId [array get ::recordState] [array get ::config siteId] [array get ::config headset]]}
 
-proc tellErrors {chan errors} {puts $chan [list errors $errors]}
+proc tellErrors {chan replyId errors} {puts $chan [list $replyId errors $errors]}
 
 proc serveCmd {chan} {
-    set cmd [getCommand $chan]
-    if {$cmd eq ""} return
+    set cmdWithId [getCommand $chan]
+    if {$cmdWithId eq ""} return
+    if {![regexp {^\s*(\d+)(.*)} $cmdWithId - replyId cmd]} {
+	set cmd $cmdWithId
+	set replyId 0
+    }
     switch -regexp -matchvar matches $cmd {
-	{^\s*state\M} {tellState $chan}
-	{^internals$} {puts $chan [list ::record [array get ::record]]}
+	{^\s*state\M} {tellState $chan $replyId}
+	{^internals$} {puts $chan [list $replyId ::record [array get ::record]]}
 	{^\s*set\s+(\S.*)} {
 	    set params [lindex $matches 1]
 	    updateArray ::recordState {name employeeId} $params
 	    updateArray ::config {siteId} $params
-	    tellState $chan
+	    tellState $chan $replyId
 	}
 	{^\s*clearError\s*$} {
 	    if {$::recordState(state) eq "error"} {
 		set ::recordState(state) noDevice
 		unset ::recordState(errorMessage)
 		if {[catch getJabraDev msg]} {setErrorState $msg}
-		tellState $chan
+		tellState $chan $replyId
 	    }
 	}
 	{^\s*stop\s*$} {
 	    stopRecord
-	    tellState $chan
+	    tellState $chan $replyId
 	}
 	{^\s*start\s+(\S.*)} {
 	    set errors {}
@@ -102,22 +106,23 @@ proc serveCmd {chan} {
 		} elseif {$pa(time) <= 0} {
 		    set tmErrors [list "cond:time>0"]
 		} else {
+		    if {$pa(time) > 600} {set pa(time) 600}
 		    set ::record(length) $pa(time)
 		    set tmErrors {}
 		}
 		set errors [concat $rsErrors $cfErrors $tmErrors]
 		if {[llength $errors]} {
-		    tellErrors $chan $errors
+		    tellErrors $chan $replyId $errors
 		} else {
 		    startRecord
-		    tellState $chan
+		    tellState $chan $replyId
 		}
 	    } else {
-		tellErrors $chan [list "wrongState:$::recordState(state)"]]
+		tellErrors $chan $replyId [list "wrongState:$::recordState(state)"]]
 	    }
 	}
 	default {
-	    tellErrors $chan [list "Unrecognized command: $cmd"]]
+	    tellErrors $chan $replyId [list "Unrecognized command: $cmd"]]
 	}
     }   
 }
