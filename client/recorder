@@ -2,9 +2,10 @@
 # -*- tcl -*- \
 exec tclsh "$0" ${1+"$@"}
 
+proc debug {message} {puts stderr $message}
+
 proc acceptConn {sock addr port} {
     fconfigure $sock -blocking 0 -buffering line
-    puts $sock "Hello $addr:$port"
     fileevent $sock readable [list serveCmd $sock]
 }
 
