@@ -156,6 +156,7 @@ proc doStartChunk {} {
 	fake {}
 	default {error "Unsupported sound system $::record(soundSystem)"}
     }
+    puts "Started record to $::record(file)"
 }
 
 proc doStartRecord {} {
@@ -172,7 +173,11 @@ proc doStopRecord {} {
 	    }
 	}
 	fake {
-	    file copy -- $::record(device) $::record(file)
+	    if {[catch {file copy -- $::record(device) $::record(file)} err]} {catch {
+		set fh [open $::record(file).stderr w]
+		puts $fh $err
+		close $fh
+	    }}
 	}
     }
     if {[file exists $::record(file)]} {
@@ -181,6 +186,9 @@ proc doStopRecord {} {
 	puts $fh "name=$::recordState(name)"
 	close $fh
 	file rename $::record(file).meta.tmp $::record(file).meta
+	puts "Finished $::record(file)"
+    } else {
+	puts "Error recording to $::record(file)"
     }
 }
 
