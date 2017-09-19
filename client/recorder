@@ -309,13 +309,16 @@ proc readConfig {file} {
 
 proc main {} {
     array set ::recordState {}
-    if {[catch {readConfig ~/.config/talkrec/recorder.tcl} err]} {
+    set configFile [lindex $::argv 0]
+    if {![file readable $configFile]} {set ::conffile ~/.config/talkrec/recorder.tcl}
+    if {[catch {readConfig $configFile} err]} {
 	puts stderr $err
 	exit 2
     }
-    set ::recordChunkLength 18
+    set ::recordChunkLength 600
     checkRecordState
     socket -server acceptConn $::config(port)
+    puts "Listen for connections on TCP port $::config(port)"
     vwait forever
 }
 
