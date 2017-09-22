@@ -1,0 +1,32 @@
+#!/bin/bash
+set -e
+. install/lib.bash
+if [ "x$1" = x--dry-run ]; then
+	shift
+	DRY_RUN=1
+fi
+RUN_STYLE="$1:-systemd"
+# Установить нужные пакеты
+NEED_DEBS=(git tcl tcllib rsync sed screen)
+ASRCLIENT=$(which asrclient.py) || NEED_DEBS+=(python2.7 pip protobuf-compiler)
+for deb in "$NEED_DEBS[@]"
+do
+	dpkg -s $deb 2> /dev/null | grep 'Status:.*installed' > /dev/null || INSTALL_DEBS+=($deb)
+done
+[ -z "${INSTALL_DEBS[*]}" ] || run sudo apt-get install --yes "${INSTALL_DEBS[@]}"
+# Установить потоковый фидер
+if [ -z "$ASRCLIENT" ]; then
+	SKCDIR="$HOME/speechkit-cloud"
+	if [ ! -d "$SKCDIR" ]; then run git clone TODO "$SKCDIR"; fi
+	runIn "$SKCDIR/TODO" TODO
+fi
+# Установить конфиг сервера
+TALKREC_DIR=$(pwd)
+case "$RUN_STYLE" in
+	systemd)
+		install_systemd_service server/talkrec-feeder.service.example
+		;;
+	screen)
+		run screen "$TALKREC_DIR/server/dispatcher"
+		;;
+esac
