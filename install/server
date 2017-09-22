@@ -5,28 +5,43 @@ if [ "x$1" = x--dry-run ]; then
 	shift
 	DRY_RUN=1
 fi
-RUN_STYLE="$1:-systemd"
+set_install_style "$1"
 # Установить нужные пакеты
 NEED_DEBS=(git tcl tcllib rsync sed screen)
 ASRCLIENT=$(which asrclient.py) || NEED_DEBS+=(python2.7 pip protobuf-compiler)
-for deb in "$NEED_DEBS[@]"
-do
-	dpkg -s $deb 2> /dev/null | grep 'Status:.*installed' > /dev/null || INSTALL_DEBS+=($deb)
-done
-[ -z "${INSTALL_DEBS[*]}" ] || run sudo apt-get install --yes "${INSTALL_DEBS[@]}"
+install_debs "${NEED_DEBS[@]}"
 # Установить потоковый фидер
 if [ -z "$ASRCLIENT" ]; then
 	SKCDIR="$HOME/speechkit-cloud"
 	if [ ! -d "$SKCDIR" ]; then run git clone TODO "$SKCDIR"; fi
 	runIn "$SKCDIR/TODO" TODO
 fi
+# Настроить rsyncd
+RSYNCD_SECRETS=server/rsyncd.secrets
+case "$INSTALL_STYLE" in
+	demo)
+		run cp -a server/rsyncd.secrets.example "$RSYNCD_SECRETS"
+		;;
+	*)
+		if ! [ -e "$RSYNCD_SECRETS" ]; then
+			run touch "$RSYNCD_SECRETS"
+			run chmod 600 "$RSYNCD_SECRETS"
+		fi
+		;;
+esac
+# TODO server/rsyncd.conf.example
+run cp server/rsyncd.conf.example server/rsyncd.conf.tmp
+fix_example_paths_in server/rsyncd.conf.tmp
+run mv server/rsyncd.conf.tmp server/rsyncd.conf
 # Установить конфиг сервера
-TALKREC_DIR=$(pwd)
+# Настроить и запустить демонов
 case "$RUN_STYLE" in
 	systemd)
 		install_systemd_service server/talkrec-feeder.service.example
+		install_systemd_service server/talkrec-rsync.service.example
 		;;
 	screen)
-		run screen "$TALKREC_DIR/server/dispatcher"
+		run screen "$TALKREC_DIR/server/talkrec-feeder"
+		run screen /usr/bin/rsync --daemon --no-detach --config "$TALKREC_DIR/server/rsyncd.conf"
 		;;
 esac
