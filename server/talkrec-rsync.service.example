@@ -1,0 +1,9 @@
+[Unit]
+Description=fast remote file copy program daemon
+ConditionPathExists=/home/user/talkrec/server/rsyncd.conf
+
+[Service]
+ExecStart=/usr/bin/rsync --daemon --no-detach --config=/home/user/talkrec/server/rsyncd.conf
+
+[Install]
+WantedBy=default.target
