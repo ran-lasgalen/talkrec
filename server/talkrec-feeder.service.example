@@ -1,0 +1,9 @@
+[Unit]
+AssertPathExists=/home/user/talkrec/server/talkrec-feeder
+
+[Service]
+WorkingDirectory=~
+ExecStart=/home/user/talkrec/server/talkrec-feeder
+
+[Install]
+WantedBy=default.target

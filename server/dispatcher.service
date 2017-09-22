@@ -1,9 +1,0 @@
-[Unit]
-AssertPathExists=/home/user/talkrec/server/dispatcher
-
-[Service]
-WorkingDirectory=~
-ExecStart=/home/user/talkrec/server/dispatcher
-
-[Install]
-WantedBy=default.target
