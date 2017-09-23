@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+. install/lib.bash
+if [ "x$1" = x--dry-run ]; then
+	shift
+	DRY_RUN=1
+fi
+set_install_style "$1"
+# Установить нужные пакеты
+NEED_DEBS=(tcl tcllib rsync sed screen)
