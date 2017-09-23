@@ -21,9 +21,9 @@ cd "$workdir" || exit 2
 while true; do
 	for f in *.wav; do
 		if [ -f "$f.meta" ]; then
-			rsync -t --password-file "$pw_file" -- "$f" "$f.meta" "rsync://$user@$server/queue/" &&
+			rsync -t --password-file "$pw_file" -- "$f" "$f.meta" "rsync://$user@$server:8873/queue/" &&
 				touch -- "$f.flag" &&
-				rsync -t --password-file "$pw_file" -- "$f.flag" "rsync://$user@$server/queue/" &&
+				rsync -t --password-file "$pw_file" -- "$f.flag" "rsync://$user@$server:8873/queue/" &&
 				rm -f -- "$f" "$f.meta" "$f.flag"
 		fi
 	done
