@@ -31,6 +31,7 @@ INSTALL_STYLE=${INSTALL_STYLE:-working}
 [ root != "$USER" ] || throw 'Not suitable for root user'
 TALKREC_DIR=$(pwd)
 SERVICE_DIR="$HOME/.config/systemd/user"
+CONFIG_DIR="$HOME/.config/talkrec"
 
 set_install_style () {
 	INSTALL_STYLE=${1:-$INSTALL_STYLE}
