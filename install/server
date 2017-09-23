@@ -5,18 +5,25 @@ if [ "x$1" = x--dry-run ]; then
 	shift
 	DRY_RUN=1
 fi
+# Вид установки: working или demo
 set_install_style "$1"
-# Установить нужные пакеты
+# Установка нужных пакетов
 NEED_DEBS=(git tcl tcllib rsync sed screen)
-ASRCLIENT=$(which asrclient.py) || NEED_DEBS+=(python2.7 pip protobuf-compiler)
+ASRCLIENT=$(which asrclient.py) || NEED_DEBS+=(python2.7 python-setuptools python-pip protobuf-compiler)
 install_debs "${NEED_DEBS[@]}"
-# Установить потоковый фидер
+# Установка потокового фидера; инструкции из python/README.md из его исходников, выкачиваемых ниже
 if [ -z "$ASRCLIENT" ]; then
-	SKCDIR="$HOME/speechkit-cloud"
-	if [ ! -d "$SKCDIR" ]; then run git clone TODO "$SKCDIR"; fi
-	runIn "$SKCDIR/TODO" TODO
+	SKCDIR="$HOME/speechkitcloud"
+	if [ ! -d "$SKCDIR" ]; then run git clone https://github.com/yandex/speechkitcloud "$SKCDIR"; fi
+	run pushd "$SKCDIR/python"
+	run bash -c "protoc -I=asrclient --python_out=asrclient asrclient/*.proto"
+	run python ./setup.py sdist
+	run cd dist
+	run sudo pip install asrclient-0.5.0.tar.gz
+	run popd
 fi
-# Настроить rsyncd
+# Настройка rsyncd
+# Файл авторизации: с демо-пользователем для демо-установки, пустой для боевой
 RSYNCD_SECRETS=server/rsyncd.secrets
 case "$INSTALL_STYLE" in
 	demo)
@@ -29,12 +36,12 @@ case "$INSTALL_STYLE" in
 		fi
 		;;
 esac
-# TODO server/rsyncd.conf.example
+# Файл конфигурации демона rsync
 run cp server/rsyncd.conf.example server/rsyncd.conf.tmp
 fix_example_paths_in server/rsyncd.conf.tmp
 run mv server/rsyncd.conf.tmp server/rsyncd.conf
-# Установить конфиг сервера
-# Настроить и запустить демонов
+# Установка конфига обработчика очереди, пока отсутствует
+# Настройка и запуск демонов
 case "$RUN_STYLE" in
 	systemd)
 		install_systemd_service server/talkrec-feeder.service.example
