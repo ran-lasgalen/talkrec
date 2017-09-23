@@ -1,0 +1,23 @@
+pid file = /home/user/talkrec/server/rsyncd.pid
+port = 8873
+charset = UTF-8
+
+[queue]
+	path = /home/user/queue
+	write only = true
+	read only = false
+	list = false
+	#uid = user
+	#gid = user
+	incoming chmod = Du=rwx,Dg=rx,o=,Fu=rw,Fg=r
+	auth users = n*
+	secrets file = /home/user/talkrec/server/rsyncd.secrets
+
+[scripts]
+	path = /home/user/talkrec/client
+	read only = true
+	#uid = user
+	#gid = user
+	auth users = n*
+	secrets file = /home/user/talkrec/server/rsyncd.secrets
+
