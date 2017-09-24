@@ -52,5 +52,6 @@ case "$RUN_STYLE" in
 		[ -n "$STY" ] || throw "Необходим запуск из-под screen"
 		run screen install/run_in_loop "$TALKREC_DIR/server/talkrec-feeder"
 		run screen install/run_in_loop /usr/bin/rsync --daemon --no-detach --config "$TALKREC_DIR/server/rsyncd.conf"
+		run screen install/run_in_loop "$TALKREC_DIR/server/show-results.tcl"
 		;;
 esac
