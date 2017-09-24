@@ -9,7 +9,7 @@ fi
 set_install_style "$1"
 # Установка нужных пакетов
 NEED_DEBS=(git tcl tcllib rsync sed screen)
-ASRCLIENT=$(which asrclient.py) || NEED_DEBS+=(python2.7 python-setuptools python-pip protobuf-compiler)
+ASRCLIENT=$(which asrclient-cli.py) || NEED_DEBS+=(python2.7 python-setuptools python-pip protobuf-compiler)
 install_debs "${NEED_DEBS[@]}"
 # Установка потокового фидера; инструкции из python/README.md из его исходников, выкачиваемых ниже
 if [ -z "$ASRCLIENT" ]; then
