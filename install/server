@@ -28,6 +28,7 @@ RSYNCD_SECRETS=server/rsyncd.secrets
 case "$INSTALL_STYLE" in
 	demo)
 		run cp -a server/rsyncd.secrets.example "$RSYNCD_SECRETS"
+		run chmod 600 "$RSYNCD_SECRETS"
 		;;
 	*)
 		if ! [ -e "$RSYNCD_SECRETS" ]; then

@@ -10,22 +10,23 @@ SERVER_IP="$1"
 # Вид установки: working или demo
 set_install_style demo
 # Установить нужные пакеты
-NEED_DEBS=(tcl tcllib rsync sed screen)
+NEED_DEBS=(tcl tcllib tk rsync sed screen)
 install_debs "${NEED_DEBS[@]}"
 run mkdir -p "$CONFIG_DIR"
 case "$INSTALL_STYLE" in
 	demo)
 		# Конфигурация скрипта записи
 		run cp example_configs/recorder.tcl "$CONFIG_DIR/recorder.tcl.tmp"
-		run sed -i -e 's/ *# *\(set  *::config(headset)\).*/\1 1/' -e 's/ *# *\(set  *::config(siteId)\).*/\1 1' "$CONFIG_DIR/recorder.tcl.tmp"
+		run sed -i -e 's/ *# *\(set  *::config(headset)\).*/\1 1/' -e 's/ *# *\(set  *::config(siteId)\).*/\1 1/' "$CONFIG_DIR/recorder.tcl.tmp"
 		run mv "$CONFIG_DIR/recorder.tcl.tmp" "$CONFIG_DIR/recorder.tcl"
 		# Конфигурация обработчика очереди
 		run cp example_configs/sound_sender.bash "$CONFIG_DIR/sound_sender.bash.tmp"
-		run sed -i -e "s/server=.*/server=$SERVER_IP/" -e 's/pw_file=.*/pw_file="$CONFIG_DIR/nucdemo.pw"/' "$CONFIG_DIR/sound_sender.bash.tmp"
+		run sed -i -e "s/server=.*/server=$SERVER_IP/" -e 's@pw_file=.*@pw_file="$confdir/nucdemo.pw"@' "$CONFIG_DIR/sound_sender.bash.tmp"
 		run mv "$CONFIG_DIR/sound_sender.bash.tmp" "$CONFIG_DIR/sound_sender.bash"
 		# Пароль для rsync
 		run cp server/rsyncd.secrets.example "$CONFIG_DIR/nucdemo.pw.tmp"
 		run sed -i -e 's/nucdemo://' "$CONFIG_DIR/nucdemo.pw.tmp"
+		run chmod 600 "$CONFIG_DIR/nucdemo.pw.tmp"
 		run mv "$CONFIG_DIR/nucdemo.pw.tmp" "$CONFIG_DIR/nucdemo.pw"
 		;;
 	*)

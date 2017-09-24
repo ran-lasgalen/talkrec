@@ -1,6 +1,7 @@
 pid file = /home/user/talkrec/server/rsyncd.pid
 port = 8873
 charset = UTF-8
+use chroot = false
 
 [queue]
 	path = /home/user/queue
