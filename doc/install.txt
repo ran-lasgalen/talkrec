@@ -62,7 +62,7 @@ freeform. Остальные (более специализированные) �
 ----------------------------------------------------
 
     $ cd
-    $ sudo apt-get install git screen
+    $ sudo apt-get install --yes git screen
     $ git clone https://github.com/ran-lasgalen/talkrec.git
     $ cd talkrec
     $ screen
@@ -74,7 +74,7 @@ freeform. Остальные (более специализированные) �
 Для демо-установки достаточно знать IP сервера распознавания.
 
     $ cd
-    $ sudo apt-get install git screen
+    $ sudo apt-get install --yes git screen
     $ git clone https://github.com/ran-lasgalen/talkrec.git
     $ cd talkrec
     $ screen
