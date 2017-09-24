@@ -5,6 +5,42 @@ if [ "x$1" = x--dry-run ]; then
 	shift
 	DRY_RUN=1
 fi
-set_install_style "$1"
+# IP сервера распознавания
+SERVER_IP="$1"
+# Вид установки: working или demo
+set_install_style demo
 # Установить нужные пакеты
 NEED_DEBS=(tcl tcllib rsync sed screen)
+install_debs "${NEED_DEBS[@]}"
+run mkdir -p "$CONFIG_DIR"
+case "$INSTALL_STYLE" in
+	demo)
+		# Конфигурация скрипта записи
+		run cp example_configs/recorder.tcl "$CONFIG_DIR/recorder.tcl.tmp"
+		run sed -i -e 's/ *# *\(set  *::config(headset)\).*/\1 1/' -e 's/ *# *\(set  *::config(siteId)\).*/\1 1' "$CONFIG_DIR/recorder.tcl.tmp"
+		run mv "$CONFIG_DIR/recorder.tcl.tmp" "$CONFIG_DIR/recorder.tcl"
+		# Конфигурация обработчика очереди
+		run cp example_configs/sound_sender.bash "$CONFIG_DIR/sound_sender.bash.tmp"
+		run sed -i -e "s/server=.*/server=$SERVER_IP/" -e 's/pw_file=.*/pw_file="$CONFIG_DIR/nucdemo.pw"/' "$CONFIG_DIR/sound_sender.bash.tmp"
+		run mv "$CONFIG_DIR/sound_sender.bash.tmp" "$CONFIG_DIR/sound_sender.bash"
+		# Пароль для rsync
+		run cp server/rsyncd.secrets.example "$CONFIG_DIR/nucdemo.pw.tmp"
+		run sed -i -e 's/nucdemo://' "$CONFIG_DIR/nucdemo.pw.tmp"
+		run mv "$CONFIG_DIR/nucdemo.pw.tmp" "$CONFIG_DIR/nucdemo.pw"
+		;;
+	*)
+		throw "Способ установки $INSTALL_STYLE пока не поддерживается"
+		;;
+esac
+# Запуск
+case "$RUN_STYLE" in
+	screen)
+		[ -n "$STY" ] || throw "Необходим запуск из-под screen"
+		run screen install/run_in_loop "$TALKREC_DIR/client/recorder"
+		run screen install/run_in_loop "$TALKREC_DIR/client/sound_sender"
+		run screen install/run_in_loop "$TALKREC_DIR/client/record_manager"
+		;;
+	*)
+		throw "Способ запуска $RUN_STYLE пока не поддерживается"
+		;;
+esac

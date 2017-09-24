@@ -7,6 +7,14 @@ if [ "x$1" = x--dry-run ]; then
 fi
 # Вид установки: working или demo
 set_install_style "$1"
+case "$RUN_STYLE" in
+	screen)
+		case "$STY" in
+			*.talkrec-server) ;;
+			*) throw "Эту команду необходимо запускать из-под сеанса screen -S talkrec-server"
+		esac
+		;;
+esac
 # Установка нужных пакетов
 NEED_DEBS=(git tcl tcllib rsync sed screen)
 ASRCLIENT=$(which asrclient.py) || NEED_DEBS+=(python2.7 python-setuptools python-pip protobuf-compiler)
@@ -48,7 +56,8 @@ case "$RUN_STYLE" in
 		install_systemd_service server/talkrec-rsync.service.example
 		;;
 	screen)
-		run screen "$TALKREC_DIR/server/talkrec-feeder"
-		run screen /usr/bin/rsync --daemon --no-detach --config "$TALKREC_DIR/server/rsyncd.conf"
+		[ -n "$STY" ] || throw "Необходим запуск из-под screen"
+		run screen install/run_in_loop "$TALKREC_DIR/server/talkrec-feeder"
+		run screen install/run_in_loop /usr/bin/rsync --daemon --no-detach --config "$TALKREC_DIR/server/rsyncd.conf"
 		;;
 esac

@@ -1,0 +1,8 @@
+#!/bin/sh
+while true
+do
+	echo "$*"
+	"$@"
+	echo "Sleeping 12 seconds before restart..."
+	sleep 12
+done

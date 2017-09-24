@@ -25,7 +25,7 @@ throw () {
 	exit 2
 }
 
-INSTALL_STYLE=${INSTALL_STYLE:-working}
+INSTALL_STYLE=${INSTALL_STYLE:-demo}
 [ -d "$HOME" ] || throw '$HOME not defined'
 [ -n "$USER" ] || throw '$USER not defined'
 [ root != "$USER" ] || throw 'Not suitable for root user'

@@ -4,12 +4,12 @@ exec wish "$0" ${1+"$@"}
 
 proc main {} {
     # Ключ - имя, значение - employeeId
-    array set ::employee {{Борис Крысталь} 1 {Артем Чуприна} 2}
+    array set ::employee {{Иван Иванов} 1 {Семен Семенов} 2}
     array set ::availableHeadsets {}
     array set ::headsetsInUse {}
     set ::defaultBoldFont [boldVersionOfFont TkDefaultFont]
     createMainFrame
-    foreach peer {localhost:17119 localhost:17120} {
+    foreach peer {localhost:17119} {
 	set ::onConnect($peer) [list connectedToRecorder $peer]
 	set ::onDisconnect($peer) [list disconnectedFromRecorder $peer]
 	after idle [list startConnectionLoop $peer]
