@@ -7,14 +7,6 @@ if [ "x$1" = x--dry-run ]; then
 fi
 # Вид установки: working или demo
 set_install_style "$1"
-case "$RUN_STYLE" in
-	screen)
-		case "$STY" in
-			*.talkrec-server) ;;
-			*) throw "Эту команду необходимо запускать из-под сеанса screen -S talkrec-server"
-		esac
-		;;
-esac
 # Установка нужных пакетов
 NEED_DEBS=(git tcl tcllib rsync sed screen)
 ASRCLIENT=$(which asrclient.py) || NEED_DEBS+=(python2.7 python-setuptools python-pip protobuf-compiler)
