@@ -61,11 +61,11 @@ freeform. Остальные (более специализированные) �
 Остальное (прием записей и подача их в SpeechkitBox)
 ----------------------------------------------------
 
-    $ cd
     $ sudo apt-get install --yes git screen
+    $ screen
+    $ cd
     $ git clone https://github.com/ran-lasgalen/talkrec.git
     $ cd talkrec
-    $ screen
     $ install/server demo
 
 Установка системы записи разговоров
@@ -73,11 +73,11 @@ freeform. Остальные (более специализированные) �
 
 Для демо-установки достаточно знать IP сервера распознавания.
 
-    $ cd
     $ sudo apt-get install --yes git screen
+    $ screen
+    $ cd
     $ git clone https://github.com/ran-lasgalen/talkrec.git
     $ cd talkrec
-    $ screen
     $ install/client IP-адрес-сервера-распознавания
 
 
