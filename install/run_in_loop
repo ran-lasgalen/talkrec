@@ -1,4 +1,6 @@
 #!/bin/sh
+DISPLAY=:0
+export DISPLAY
 while true
 do
 	echo "$*"
