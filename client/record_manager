@@ -217,7 +217,7 @@ proc startRecordOnHeadset {headset button} {
     if {![setIfExists ::headsetsInUse(h_$headset) employeeId]} return
     foreach {name id} [array get ::employee] {
 	if {$id == $employeeId} {
-	    set request [list [nextCommandId] start employeeId $id name $name time 10]
+	    set request [list [nextCommandId] start employeeId $id name $name time 180]
 	    if {[sendRequest $chan $request]} {
 		#debug "Sent request to $chan: $request"
 	    }
