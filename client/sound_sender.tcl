@@ -1,49 +1,26 @@
 #!/usr/bin/tclsh
 
-package require Tcl 8.5
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] client libtcl]
+source [file join $libtcldir common.tcl]
 package require yaml
-package require log
-package require cmdline
 
 proc main {} {
-    set options {
-	{dry-run "Не выполнять команды, меняющие ситуацию, а только показывать их"}
-	{debug "Показывать отладочный вывод"}
-    }
-    array set ::opt [::cmdline::getoptions ::argv $options]
-    ::log::lvSuppressLE emergency 0
-    if {!$::opt(debug)} {::log::lvSuppress debug}
-    if {$::opt(dry-run)} {set ::dryRun 1}
+    getOptions {}
     set ::configFile [lindex $::argv 0]
     if {$::configFile eq ""} {set ::configFile ~/.config/talkrec/sound_sender.yaml}
-    set ::mtime 0
     if {![rereadConfig]} {exit 2}
     after idle runQueue
     vwait forever
 }
 
-proc errorListWhile {context errors} {
-    set res ""
-    append res $context ":"
-    foreach err $errors {append res "\n- " $err}
-    return $res
-}
-
 proc rereadConfig {} {
-    if {[catch {file mtime $::configFile} mtime]} {
-	::log::log error "Файл $::configFile не существует или недоступен."
+    try {
+	if {[isFileModified $::configFile]} {set ::config [readConfig $::configFile]}
+	return true
+    } on error err {
+	::log::log error $err
 	return false
     }
-    if {$mtime > $::mtime} {
-	set ::mtime $mtime; # В случае ошибки чтения тоже не перечитываем повторно, если файл не изменился, ибо смысл?
-	if {[catch {readConfig $::configFile} res]} {
-	    ::log::log error [errorListWhile "Ошибки при чтении файла конфигурации $::configFile" $res]
-	    return false;
-	} else {
-	    set ::config $res
-	}
-    }
-    return true
 }
 
 proc readConfig {configFile} {
@@ -52,7 +29,7 @@ proc readConfig {configFile} {
     if {![dict exists $conf user]} {lappend errors "не указано имя пользователя для rsync (ключ user)"}
     if {![dict exists $conf password]} {lappend errors "не указан пароль для rsync (ключ password)"}
     if {![dict exists $conf server]} {lappend errors "не указан сервер распознавания (ключ server)"}
-    if {[llength $errors] > 0} {error $errors}
+    if {[llength $errors] > 0} {error [listOfErrors "Ошибки при чтении файла конфигурации $configFile" $errors]}
     if {![dict exists $conf workdir]} {
 	set wd [file normalize .]
 	::log::log notice "рабочая папка (ключ workdir) не указана, установлена в $wd"
@@ -83,22 +60,6 @@ proc sendSound {soundFile} {
 	run file delete -- $soundFile $metaFile $flagFile
     } err]} {
 	::log::log error $err
-    }
-}
-
-proc run {args} {
-    if {[lindex $args 0] eq "exec"} {
-	set which "shell"
-	set report [lrange $args 1 end]
-    } else {
-	set which "tcl"
-	set report $args
-    }
-    if {[info exists ::dryRun] && $::dryRun} {
-	::log::log notice [concat [list Would run $which command:] $report]
-    } else {
-	::log::log info [concat [list $which command:] $report]
-	{*}$args
     }
 }
 

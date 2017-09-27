@@ -1,0 +1,4 @@
+server: localhost
+user: nucdemo
+password: DemoSenderPassword
+workdir: ~/talks
