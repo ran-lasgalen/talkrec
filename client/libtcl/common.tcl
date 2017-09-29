@@ -2,6 +2,8 @@ package require Tcl 8.5
 package require log 1.3
 package require cmdline 1.3.3
 
+set ::configDir [file normalize ~/.config/talkrec]
+
 proc getOptions {optionsDesc {usage "options"}} {
     set optDesc $optionsDesc
     lappend optDesc {dry-run "Не выполнять команды, меняющие ситуацию, а только показывать их"}
@@ -36,4 +38,18 @@ proc run {args} {
 	::log::log info $args
 	{*}$args
     }
+}
+
+proc createFileViaTmp {filename chanvar script} {
+    upvar $chanvar chan
+    set tmpname $filename.tmp
+    run file delete -- $tmpname
+    set chan dryRunChan
+    run set chan [open $tmpname w]
+    try {
+	uplevel $script
+    } finally {
+	run close $chan
+    }
+    run file rename -- $tmpname $filename
 }
