@@ -1,0 +1,57 @@
+#!/usr/bin/tclsh
+
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] client libtcl]
+source [file join $libtcldir common.tcl]
+source [file join $libtcldir install.tcl]
+set utildir [file join [file dirname $libtcldir] util]
+set clientdir [file dirname $libtcldir]
+set exampledir [file join $clientdir example]
+package require yaml
+
+proc main {} {
+    set optDesc {}
+    getOptions $optDesc "[OPTIONS] [demo|CONFIG_FILE]"
+    set cfg [lindex $argv 0]
+    try {
+	if {$cfg eq "demo"} {
+	    set configFile [file join $exampledir recorder.yaml]
+	    set fillRequired [dict create headset 1 siteId 1]
+	} else {
+	    set configFile [file normalize $cfg]
+	    set fillRequired [dict create]
+	}
+	set ::config [dict merge $fillRequired [::yaml::yaml2dict -file $configFile]]
+    } on error err {
+	puts stderr $err
+	exit 1
+    }
+    foreach override [concat server [dict keys $::config]] {
+	if {[info exists ::opt($override)]} {
+	    dict set ::config $override $::opt($override)
+	}
+    }
+    foreach param {server headset siteId user password} {
+	if {![dict exists $::config $param]} {
+	    append errors "\n- не указан обязательный параметр $param"
+	}
+    }
+    if {[info exists $errors]} {
+	puts stderr "Ошибки конфигурации:$errors"
+	exit 2
+    }
+    if {[catch doInstall err]} {
+	puts stderr $err
+	exit 3
+    }
+}
+
+proc doInstall {} {
+    installDebs {tcl tcllib tk rsync}; # FIXME pulseaudio
+    run file mkdir $::configDir
+    createFileViaTmp [file join $::configDir recorder.yaml] rcfh {
+	run puts $rcfh [::yaml::yaml2dict $::config]
+    }
+    
+}
+
+main
