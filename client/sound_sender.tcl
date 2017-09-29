@@ -15,7 +15,7 @@ proc main {} {
 
 proc rereadConfig {} {
     try {
-	if {[isFileModified $::configFile]} {set ::config [readConfig $::configFile]}
+	if {[fileModified $::configFile]} {set ::config [readConfig $::configFile]}
 	return true
     } on error err {
 	::log::log error $err

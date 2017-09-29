@@ -3,6 +3,7 @@ package require log 1.3
 package require cmdline 1.3.3
 
 set ::configDir [file normalize ~/.config/talkrec]
+set ::dryRun 0
 
 proc getOptions {optionsDesc {usage "options"}} {
     set optDesc $optionsDesc
@@ -14,7 +15,7 @@ proc getOptions {optionsDesc {usage "options"}} {
     if {$::opt(dry-run)} {set ::dryRun 1}
 }
 
-proc isFileModified {file} {
+proc fileModified {file} {
     set mtime [file mtime $file]
     if {![info exists ::mtime($file)] || $mtime > $::mtime($file)} {
 	set ::mtime($file) $mtime
@@ -32,8 +33,9 @@ proc listOfErrors {context errors} {
 }
 
 proc run {args} {
-    if {[info exists ::dryRun] && $::dryRun} {
+    if {$::dryRun} {
 	::log::log notice [concat {Would run:} $args]
+	return dryRun
     } else {
 	::log::log info $args
 	{*}$args
@@ -44,8 +46,7 @@ proc createFileViaTmp {filename chanvar script} {
     upvar $chanvar chan
     set tmpname $filename.tmp
     run file delete -- $tmpname
-    set chan dryRunChan
-    run set chan [open $tmpname w]
+    set chan [run open $tmpname w]
     try {
 	uplevel $script
     } finally {

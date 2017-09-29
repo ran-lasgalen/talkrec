@@ -10,7 +10,7 @@ package require yaml
 
 proc main {} {
     set optDesc {}
-    getOptions $optDesc "[OPTIONS] [demo|CONFIG_FILE]"
+    getOptions $optDesc "\[OPTIONS] \[demo|CONFIG_FILE]"
     set cfg [lindex $argv 0]
     try {
 	if {$cfg eq "demo"} {
@@ -26,7 +26,7 @@ proc main {} {
 	exit 1
     }
     foreach override [concat server [dict keys $::config]] {
-	if {[info exists ::opt($override)]} {
+	if {[info exists ::opt($override)] && $::opt($override) ne ""} {
 	    dict set ::config $override $::opt($override)
 	}
     }
