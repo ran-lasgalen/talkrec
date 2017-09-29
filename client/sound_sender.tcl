@@ -7,7 +7,7 @@ package require yaml
 proc main {} {
     getOptions {}
     set ::configFile [lindex $::argv 0]
-    if {$::configFile eq ""} {set ::configFile ~/.config/talkrec/sound_sender.yaml}
+    if {$::configFile eq ""} {set ::configFile ~/.config/talkrec/recorder.yaml}
     if {![rereadConfig]} {exit 2}
     after idle runQueue
     vwait forever

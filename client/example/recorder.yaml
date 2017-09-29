@@ -1,0 +1,27 @@
+# Папка звукозаписей (recorder, sound_sender)
+workdir: ~/talks
+
+# Номер гарнитуры, обязательный (recorder)
+# headset: 1
+
+# Ключ салона, обязательный (recorder, record_manager)
+# siteId: 1
+
+# TCP порт, на котором слушать команды (recorder)
+port: 17119
+
+# Звуковая система. Известные: pulse, fake (recorder)
+soundSystem: pulse
+
+# Регулярное выражение для поиска устройства записи pulse (recorder)
+deviceRE: input.usb-GN_Netcom_A_S_Jabra_PRO_9460
+
+# Файл-источник записи fake (recorder)
+# fakeRecord: ~/test-record.wav
+
+# Адрес сервера распознавания, обязательный (sound_sender, record_manager)
+# server: 127.0.0.1
+
+# Пользователь и пароль доступа к серверу для отправки записей (sound_sender)
+user: nucdemo
+password: DemoSenderPassword
