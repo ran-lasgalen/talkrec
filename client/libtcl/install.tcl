@@ -8,7 +8,7 @@ proc installDebs {debs} {
 		if {[regexp {^Status:.*installed} $line]} {set found 1}
 	    }
 	    close $pipe
-	}
+	} on error {} {}
 	if {!$found} {lappend need $deb}
     }
     if {[llength $need] > 0} {
