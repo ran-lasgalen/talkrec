@@ -54,3 +54,9 @@ proc createFileViaTmp {filename chanvar script} {
     }
     run file rename -- $tmpname $filename
 }
+
+proc debugStackTrace {statusDict} {
+    catch {dict get $statusDict -errorinfo} stackTrace
+    ::log::log debug $stackTrace
+}
+
