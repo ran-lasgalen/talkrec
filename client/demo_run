@@ -1,0 +1,10 @@
+#!/usr/bin/tclsh
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] client libtcl]
+source [file join $libtcldir common.tcl]
+source [file join $libtcldir install.tcl]
+set scriptdir [file normalize [file dirname [info script]]]
+
+set ::env(DISPLAY) :0
+runProcInLoop $scriptdir/recorder
+runProcInLoop $scriptdir/sound_sender
+runProcInLoop $scriptdir/record_manager

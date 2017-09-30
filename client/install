@@ -19,14 +19,21 @@ proc main {} {
 	if {$cfg eq "demo"} {
 	    set configFile [file join $::exampledir recorder.yaml]
 	    set fillRequired [dict create headset 1 siteId 1]
+	    set ::runStyle demo
 	} else {
 	    set configFile [file normalize $cfg]
 	    set fillRequired [dict create]
+	    set ::runStyle systemd
 	}
 	set ::config [dict merge $fillRequired [::yaml::yaml2dict -file $configFile]]
-    } on error err {
+    } on error {err dbg} {
+	debugStackTrace $dbg
 	puts stderr $err
 	exit 1
+    }
+    if {[dict exists $::config runStyle]} {
+	set ::runStyle [dict get $::config runStyle]
+	dict unset ::config runStyle
     }
     foreach override [concat server [dict keys $::config]] {
 	if {[info exists ::opt($override)] && $::opt($override) ne ""} {
@@ -42,7 +49,8 @@ proc main {} {
 	puts stderr "Ошибки конфигурации:$errors"
 	exit 2
     }
-    if {[catch doInstall err]} {
+    if {[catch doInstall err dbg]} {
+	debugStackTrace $dbg
 	puts stderr $err
 	exit 3
     }
@@ -54,7 +62,14 @@ proc doInstall {} {
     createFileViaTmp [file join $::configDir recorder.yaml] rcfh {
 	run puts $rcfh [::yaml::dict2yaml $::config]
     }
-    
+    switch $::runStyle {
+	demo {
+	    run exec $clientdir/demo_run >@ stdout 2>@ stderr
+	}
+	default {
+	    puts stderr "Способ запуска $::runStyle пока не поддерживается"
+	}
+    }
 }
 
 main
