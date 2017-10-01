@@ -1,10 +1,10 @@
 #!/usr/bin/tclsh
 
-set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] client libtcl]
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
 source [file join $libtcldir common.tcl]
 source [file join $libtcldir install.tcl]
-set ::clientdir [file dirname $libtcldir]
-set ::exampledir [file join $clientdir example]
+set ::scriptdir [file dirname [file normalize [info script]]]
+set ::exampledir [file join $scriptdir example]
 package require yaml
 
 proc main {} {
@@ -64,7 +64,7 @@ proc doInstall {} {
     }
     switch $::runStyle {
 	demo {
-	    run exec $clientdir/demo_run >@ stdout 2>@ stderr
+	    run exec $scriptdir/demo_run >@ stdout 2>@ stderr
 	}
 	default {
 	    puts stderr "Способ запуска $::runStyle пока не поддерживается"
