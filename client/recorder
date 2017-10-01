@@ -48,6 +48,14 @@ proc checkNames {arr names} {
     return $errors
 }
 
+proc checkKeys {dict keys} {
+    set errors {}
+    foreach key $keys {
+	if {![dict exists $dict $key]} {lappend errors need:$key}
+    }
+    return $errors
+}
+
 proc checkRE {var name re} {
     upvar $var v
     if {![info exists v]} {
@@ -59,7 +67,7 @@ proc checkRE {var name re} {
     }
 }
 
-proc tellState {chan replyId} {puts $chan [concat $replyId [array get ::recordState] [array get ::config siteId] [array get ::config headset]]}
+proc tellState {chan replyId} {puts $chan [concat $replyId [array get ::recordState] [dict filter $::config siteId headset]]}
 
 proc tellErrors {chan replyId errors} {puts $chan [list $replyId errors $errors]}
 
@@ -76,7 +84,7 @@ proc serveCmd {chan} {
 	{^\s*set\s+(\S.*)} {
 	    set params [lindex $matches 1]
 	    updateArray ::recordState {name employeeId} $params
-	    updateArray ::config {siteId} $params
+	    updateDict ::config {siteId} $params
 	    tellState $chan $replyId
 	}
 	{^\s*clearError\s*$} {
@@ -99,7 +107,7 @@ proc serveCmd {chan} {
 		array set pa $params
 		updateArray ::recordState {name employeeId} $params
 		set rsErrors [checkNames ::recordState {name employeeId}]
-		set cfErrors [checkNames ::config {siteId headset}]
+		set cfErrors [checkKeys $::config {siteId headset}]
 		set tmErrors [checkRE ::recordState(time) time {\d+}]
 		if {![info exists pa(time)]} {
 		    set tmErrors [list "need:time"]
@@ -128,13 +136,13 @@ proc serveCmd {chan} {
 }
 
 proc getJabraDev {} {
-    set ::record(soundSystem) $::config(soundSystem)
+    set ::record(soundSystem) [dict get $::config soundSystem]
     unset -nocomplain ::record(device)
     switch $::record(soundSystem) {
 	pulse {
 	    set pipe [open "| pactl list short sources"]
 	    while {![eof $pipe]} {
-		if {[regexp {^\d+\s+(\S+)} [gets $pipe] dummy dev] && [regexp $::config(deviceRE) $dev]} {
+		if {[regexp {^\d+\s+(\S+)} [gets $pipe] dummy dev] && [regexp [dict get $::config deviceRE] $dev]} {
 		    close $pipe
 		    set ::record(device) $dev
 		    return
@@ -143,7 +151,7 @@ proc getJabraDev {} {
 	    close $pipe
 	    error noDevice
 	}
-	fake {set ::record(device) $::config(fakeRecord)}
+	fake {set ::record(device) [dict get $::config fakeRecord]}
 	default {error "Unsupported sound system $::record(soundSystem)"}
     }
 }
@@ -204,7 +212,7 @@ proc setErrorState {msg} {
 
 proc genRecordFileName {now} {
     set t [clock format $now -format "%Y%m%d_%H%M%S"]
-    return [format "%s_%s_%d_%s.wav" $t $::config(siteId) $::config(headset) $::record(id)]
+    return [format "%s_%s_%d_%s.wav" $t [dict get $::config siteId] [dict get $::config headset] $::record(id)]
 }
 
 proc startRecord {} {
@@ -299,12 +307,22 @@ proc updateArray {arr allowNames pairList} {
     }
 }
 
+proc updateDict {dict allowKeys pairList} {
+    upvar $dict d
+    foreach {key value} $pairList {
+	if {[lsearch -exact $allowKeys $key] >= 0} {
+	    dict set d $key $value
+	}
+    }
+}
+
 proc readConfig {file} {
-    array set ::config {port 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460}
-    source $file
-    if {![info exists ::config(headset)]} {error "Не указан номер гарнитуры (::config(headset))"}
-    file mkdir $::config(workdir)
-    cd $::config(workdir)
+    set defaultConfig [dict create port 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460]
+    set conf [::yaml::yaml2dict -file $file]
+    set ::config [dict merge $defaultConfig $conf]
+    if {![dict exists $::config headset]} {error "Не указан номер гарнитуры (::config(headset))"}
+    file mkdir [dict get $::config workdir]
+    cd [dict get $::config workdir]
 }
 
 proc main {} {
@@ -317,8 +335,8 @@ proc main {} {
     }
     set ::recordChunkLength 600
     checkRecordState
-    socket -server acceptConn $::config(port)
-    puts "Listen for connections on TCP port $::config(port)"
+    socket -server acceptConn [dict get $::config port]
+    puts "Listen for connections on TCP port [dict get $::config port]"
     vwait forever
 }
 
