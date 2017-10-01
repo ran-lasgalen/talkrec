@@ -328,7 +328,7 @@ proc readConfig {file} {
 proc main {} {
     array set ::recordState {}
     set configFile [lindex $::argv 0]
-    if {![file readable $configFile]} {set configFile ~/.config/talkrec/recorder.tcl}
+    if {![file readable $configFile]} {set configFile ~/.config/talkrec/recorder.yaml}
     if {[catch {readConfig $configFile} err]} {
 	puts stderr $err
 	exit 2
