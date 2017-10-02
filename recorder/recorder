@@ -78,34 +78,41 @@ proc serveCmd {chan} {
 	set cmd $cmdWithId
 	set replyId 0
     }
-    switch -regexp -matchvar matches $cmd {
-	{^\s*state\M} {tellState $chan $replyId}
-	{^internals$} {puts $chan [list $replyId ::record [array get ::record]]}
-	{^\s*set\s+(\S.*)} {
-	    set params [lindex $matches 1]
-	    updateArray ::recordState {name employeeId employeeUUID} $params
-	    updateDict ::config {siteId} $params
-	    tellState $chan $replyId
-	}
-	{^\s*clearError\s*$} {
-	    if {$::recordState(state) eq "error"} {
-		set ::recordState(state) noDevice
-		unset ::recordState(errorMessage)
-		if {[catch getJabraDev msg]} {setErrorState $msg}
+    try {
+	switch -regexp -matchvar matches $cmd {
+	    {^\s*state\M} {tellState $chan $replyId}
+	    {^internals$} {puts $chan [list $replyId ::record [array get ::record]]}
+	    {^\s*clearError\s*$} {
+		if {$::recordState(state) eq "error"} {
+		    set ::recordState(state) noDevice
+		    unset ::recordState(errorMessage)
+		    if {[catch getJabraDev msg]} {setErrorState $msg}
+		    tellState $chan $replyId
+		}
+	    }
+	    {^\s*stop\s*$} {
+		stopRecord
 		tellState $chan $replyId
 	    }
-	}
-	{^\s*stop\s*$} {
-	    stopRecord
-	    tellState $chan $replyId
-	}
-	{^\s*start\s+(\S.*)} {
-	    set errors {}
-	    if {$::recordState(state) == "ready"} {
-		# запуск записи возможен только из состояния "готов"
-		# очистим employeeId, employeeUUID и name
-		set params [concat {employeeId {} employeeUUID {}} [lindex $matches 1]]
-		array set pa $params
+	    {^\s*start\s+(\S.*)} {
+		set errors {}
+		if {$::recordState(state) == "ready"} {
+		    # запуск записи возможен только из состояния "готов"
+		    # очистим employeeId, employeeUUID
+		    set params [dict merge \
+				    {name {} employeeId {} employeeUUID {} siteId {}} \
+				    [dict filter $::config key siteId] \
+				    [lindex $matches 1]]
+		    if {![dict exists $params time]} {
+			set recordLimit 0
+		    } else {
+			set recordLimit [dict get $params time]
+		    }
+		    if {$recordLimit <= 0} {set recordLimit 600}
+		    set state [dict filter $params key name employeeId employeeUUID siteId]
+		    if {[dict get $params name] eq ""} {lappend errors "Не указано, кто говорит (name)"}
+		    if {![
+		    array set pa $params
 		updateArray ::recordState {name employeeId employeeUUID} $params
 		set rsErrors [checkNames ::recordState {name}]
 		if {"$::recordState(employeeId)$::recordState(employeeUUID)" eq ""} {lappend rsErrors "need:employeeId|employeeUUID"}
@@ -121,7 +128,7 @@ proc serveCmd {chan} {
 		    set tmErrors {}
 		}
 		set errors [concat $rsErrors $cfErrors $tmErrors]
-		if {[llength $errors]} {
+		if {[llength $errors] > 0} {
 		    tellErrors $chan $replyId $errors
 		} else {
 		    startRecord
@@ -192,8 +199,9 @@ proc doStopRecord {} {
     }
     if {[file exists $::record(file)]} {
 	set fh [open $::record(file).meta.tmp w]
-	puts $fh "employeeId=$::recordState(employeeId)"
-	puts $fh "name=$::recordState(name)"
+	foreach key {employeeId employeeUUID name} {
+	    if {$::recordState($key) ne ""} {puts $fh "$key=$::recordState($key)"}
+	}
 	close $fh
 	file rename $::record(file).meta.tmp $::record(file).meta
 	::log::log info "Finished $::record(file)"
