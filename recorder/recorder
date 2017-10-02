@@ -67,7 +67,7 @@ proc checkRE {var name re} {
     }
 }
 
-proc tellState {chan replyId} {puts $chan [concat $replyId [array get ::recordState] [dict filter $::config siteId headset]]}
+proc tellState {chan replyId} {puts $chan [concat $replyId [array get ::recordState] [dict filter $::config key siteId headset]]}
 
 proc tellErrors {chan replyId errors} {puts $chan [list $replyId errors $errors]}
 
@@ -83,7 +83,7 @@ proc serveCmd {chan} {
 	{^internals$} {puts $chan [list $replyId ::record [array get ::record]]}
 	{^\s*set\s+(\S.*)} {
 	    set params [lindex $matches 1]
-	    updateArray ::recordState {name employeeId} $params
+	    updateArray ::recordState {name employeeId employeeUUID} $params
 	    updateDict ::config {siteId} $params
 	    tellState $chan $replyId
 	}
@@ -103,10 +103,12 @@ proc serveCmd {chan} {
 	    set errors {}
 	    if {$::recordState(state) == "ready"} {
 		# запуск записи возможен только из состояния "готов"
-		set params [lindex $matches 1]
+		# очистим employeeId, employeeUUID и name
+		set params [concat {employeeId {} employeeUUID {}} [lindex $matches 1]]
 		array set pa $params
-		updateArray ::recordState {name employeeId} $params
-		set rsErrors [checkNames ::recordState {name employeeId}]
+		updateArray ::recordState {name employeeId employeeUUID} $params
+		set rsErrors [checkNames ::recordState {name}]
+		if {"$::recordState(employeeId)$::recordState(employeeUUID)" eq ""} {lappend rsErrors "need:employeeId|employeeUUID"}
 		set cfErrors [checkKeys $::config {siteId headset}]
 		set tmErrors [checkRE ::recordState(time) time {\d+}]
 		if {![info exists pa(time)]} {
@@ -159,7 +161,7 @@ proc getJabraDev {} {
 proc doStartChunk {} {
     switch $::record(soundSystem) {
 	pulse {
-	    set ::record(pid) [exec parecord --rate=16000 --channels=1 --device=$::record(device) $::record(file) 2> $::record(file).stderr &]
+	    set ::record(pid) [run exec parecord --rate=16000 --channels=1 --device=$::record(device) $::record(file) 2> $::record(file).stderr &]
 	}
 	fake {}
 	default {error "Unsupported sound system $::record(soundSystem)"}
@@ -175,7 +177,7 @@ proc doStartRecord {} {
 proc doStopRecord {} {
     switch $::record(soundSystem) {
 	pulse {
-	    catch {exec kill $::record(pid)}
+	    catch {run exec kill $::record(pid)}
 	    if {[file exists $::record(file).stderr] && [file size $::record(file).stderr] == 0} {
 		file delete $::record(file).stderr
 	    }
@@ -318,14 +320,34 @@ proc updateDict {dict allowKeys pairList} {
 
 proc readConfig {file} {
     set defaultConfig [dict create port 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460]
-    set conf [::yaml::yaml2dict -file $file]
-    set ::config [dict merge $defaultConfig $conf]
-    if {![dict exists $::config headset]} {error "Не указан номер гарнитуры (::config(headset))"}
+    set readConfig [::yaml::yaml2dict -file $file]
+    set config [dict merge $defaultConfig $readConfig]
+    set errors {}
+    if {![dict exists $config headset]} {
+	lappend errors "Не указан номер гарнитуры (ключ headset)"
+    } elseif {![regexp {^\d+$} [dict get $config headset]]} {
+	lappend errors "Номер гарнитуры (ключ headset) должен быть числом"
+    }
+    switch [dict get $config soundSystem] {
+	pulse {
+	    if {![dict exists $config deviceRE]} {lappend errors "Не указано регулярное выражение устройства (ключ deviceRE)"}
+	}
+	fake {
+	    if {![dict exists $config fakeRecord]} {
+		lappend errors "Не указан файл-источник записи (ключ fakeRecord)"
+	    } else {
+		dict set config fakeRecord [file normalize [dict get $config fakeRecord]]
+	    }
+	}
+    }
+    if {[llength $errors] > 0} {error [listOfErrors "Ошибки конфигурации" $errors]}
+    set ::config $config
     file mkdir [dict get $::config workdir]
     cd [dict get $::config workdir]
 }
 
 proc main {} {
+    getOptions {}
     array set ::recordState {}
     set configFile [lindex $::argv 0]
     if {![file readable $configFile]} {set configFile ~/.config/talkrec/recorder.yaml}
@@ -336,7 +358,7 @@ proc main {} {
     set ::recordChunkLength 600
     checkRecordState
     socket -server acceptConn [dict get $::config port]
-    ::log::log notice "Listen for connections on TCP port [dict get $::config port]"
+    ::log::log notice "Слушаю на порту TCP [dict get $::config port]"
     vwait forever
 }
 
