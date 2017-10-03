@@ -34,10 +34,10 @@ proc listOfErrors {context errors} {
 
 proc run {args} {
     if {$::dryRun} {
-	::log::log notice [concat {Would run:} $args]
+	::log::log info [concat {Would run:} $args]
 	return dryRun
     } else {
-	::log::log info $args
+	::log::log debug $args
 	{*}$args
     }
 }
