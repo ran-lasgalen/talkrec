@@ -1,13 +1,11 @@
 #!/usr/bin/tclsh
 
-set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+set libtcldir [file join [file dirname [file normalize [info script]]] libtcl]
 source [file join $libtcldir common.tcl]
 package require yaml
 
 proc main {} {
-    getOptions {}
-    set ::configFile [lindex $::argv 0]
-    if {$::configFile eq ""} {set ::configFile ~/.config/talkrec/recorder.yaml}
+    getOptions ~/.config/talkrec/recorder.yaml {}
     if {![rereadConfig]} {exit 2}
     after idle runQueue
     vwait forever
@@ -15,7 +13,7 @@ proc main {} {
 
 proc rereadConfig {} {
     try {
-	if {[fileModified $::configFile]} {set ::config [readConfig $::configFile]}
+	if {[fileModified $::opt(config)]} {set ::config [readConfig $::opt(config)]}
 	return true
     } on error err {
 	::log::log error $err

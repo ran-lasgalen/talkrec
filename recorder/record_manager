@@ -1,6 +1,4 @@
-#!/bin/sh
-# -*- tcl -*- \
-exec wish "$0" ${1+"$@"}
+#!/usr/bin/wish
 
 proc main {} {
     # Ключ - имя, значение - employeeId

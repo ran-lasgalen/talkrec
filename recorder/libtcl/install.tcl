@@ -12,7 +12,7 @@ proc installDebs {debs} {
 	if {!$found} {lappend need $deb}
     }
     if {[llength $need] > 0} {
-	run exec sudo apt-get install {*}$need
+	run exec sudo apt-get install {*}$need >@ stdout 2>@ stderr
     }
 }
 

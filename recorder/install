@@ -1,15 +1,17 @@
 #!/usr/bin/tclsh
 
-set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+set ::scriptdir [file dirname [file normalize [info script]]]
+set ::exampledir [file join $::scriptdir example]
+set libtcldir [file join $::scriptdir libtcl]
 source [file join $libtcldir common.tcl]
 source [file join $libtcldir install.tcl]
-set ::scriptdir [file dirname [file normalize [info script]]]
-set ::exampledir [file join $scriptdir example]
 package require yaml
 
 proc main {} {
-    set optDesc {}
-    getOptions $optDesc "\[OPTIONS] demo|CONFIG_FILE"
+    set optDesc {
+	{server.arg "" "IP-адрес сервера распознавания"}
+    }
+    getOptions - $optDesc "\[OPTIONS] demo|CONFIG_FILE"
     set cfg [lindex $::argv 0]
     if {$cfg eq ""} {
 	puts stderr [::cmdline::usage $optDesc "\[OPTIONS] demo|CONFIG_FILE"]
@@ -45,7 +47,7 @@ proc main {} {
 	    append errors "\n- не указан обязательный параметр $param"
 	}
     }
-    if {[info exists $errors]} {
+    if {[info exists errors]} {
 	puts stderr "Ошибки конфигурации:$errors"
 	exit 2
     }
@@ -57,14 +59,24 @@ proc main {} {
 }
 
 proc doInstall {} {
-    installDebs {tcl tcllib tk rsync}; # FIXME pulseaudio
+    set needDebs {tcl tcllib tk rsync sox}
+    if {![dict exists $::config soundSystem]} {
+	lappend needDebs {pulseaudio pulseaudio-utils}
+    } else {
+	switch {[dict get $::config soundSystem]} {
+	    pulse {lappend needDebs {pulseaudio pulseaudio-utils}}
+	}
+    }
+    installDebs $needDebs
     run file mkdir $::configDir
+    set pwFiles [glob -nocomplain -directory $::configDir *.pw]
+    run file delete -- $::configDir/recorder.tcl $::configDir/sound_sender.bash {*}$pwFiles
     createFileViaTmp [file join $::configDir recorder.yaml] rcfh {
 	run puts $rcfh [::yaml::dict2yaml $::config]
     }
     switch $::runStyle {
 	demo {
-	    run exec $scriptdir/demo_run >@ stdout 2>@ stderr
+	    run exec $::scriptdir/demo_run >@ stdout 2>@ stderr
 	}
 	default {
 	    puts stderr "Способ запуска $::runStyle пока не поддерживается"

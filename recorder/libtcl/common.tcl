@@ -5,14 +5,27 @@ package require cmdline 1.3.3
 set ::configDir [file normalize ~/.config/talkrec]
 set ::dryRun 0
 
-proc getOptions {optionsDesc {usage "options"}} {
+proc getOptions {defaultConfig optionsDesc {usage "options"}} {
     set optDesc $optionsDesc
+    set okIfNoDefaultConfig 0
+    if {[regexp {^-(.*)} $defaultConfig - defaultConfig]} {set okIfNoDefaultConfig 1}
+    lappend optDesc [list config.arg $defaultConfig "Файл конфигурации"]
     lappend optDesc {dry-run "Не выполнять команды, меняющие ситуацию, а только показывать их"}
     lappend optDesc {debug "Показывать отладочный вывод"}
     array set ::opt [::cmdline::getoptions ::argv $optDesc $usage]
     ::log::lvSuppressLE emergency 0
     if {!$::opt(debug)} {::log::lvSuppress debug}
     if {$::opt(dry-run)} {set ::dryRun 1}
+    if {![file exists $::opt(config)]} {
+	if {$::opt(config) ne $defaultConfig || !$okIfNoDefaultConfig} {
+	    error "Не найден файл конфигурации $::opt(config)"
+	}
+    } elseif {![file readable $::opt(config)]} {
+	error "Недостаточно прав для чтения файла конфигурации $::opt(config)"
+    }
+    if {[file pathtype $::opt(config)] ne "absolute"} {
+	set ::opt(config) [file normalize ::opt(config)]
+    }
 }
 
 proc fileModified {file} {
@@ -52,7 +65,7 @@ proc createFileViaTmp {filename chanvar script} {
     } finally {
 	run close $chan
     }
-    run file rename -- $tmpname $filename
+    run file rename -force -- $tmpname $filename
 }
 
 proc debugStackTrace {statusDict} {
