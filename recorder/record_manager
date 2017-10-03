@@ -1,17 +1,38 @@
 #!/usr/bin/wish
 
+set libtcldir [file join [file dirname [file normalize [info script]]] libtcl]
+source [file join $libtcldir common.tcl]
+package require yaml
+
 proc main {} {
-    # Ключ - имя, значение - employeeId
-    array set ::employee {{Иван Иванов} 1 {Семен Семенов} 2}
+    getOptions [configFile recorder.yaml] {}
+    try {
+	# Ключ - имя, значение - employeeId
+	array set ::employee [::yaml::yaml2dict -file [configFile employees.yaml]]
+	set ::config [readConfig $::opt(config)]
+    } on error {err dbg} {
+	debugStackTrace $dbg
+	puts stderr $err
+	exit 2
+    }
     array set ::availableHeadsets {}
     array set ::headsetsInUse {}
     set ::defaultBoldFont [boldVersionOfFont TkDefaultFont]
     createMainFrame
-    foreach peer {localhost:17119} {
+    foreach peer [dict get $::config recorders] {
+	if {[string first : $peer] < 0} {set peer [string cat $peer :17119]}
 	set ::onConnect($peer) [list connectedToRecorder $peer]
 	set ::onDisconnect($peer) [list disconnectedFromRecorder $peer]
 	after idle [list startConnectionLoop $peer]
     }
+}
+
+proc readConfig {configFile} {
+    set conf [::yaml::yaml2dict -file $configFile]
+    set errors {}
+    if {![dict exists $conf recorders]} {lappend errors "не указаны адреса устройств записи (recorders)"}
+    if {[llength $errors] > 0} {error [listOfErrors "Ошибки конфигурации" $errors]}
+    return $conf
 }
 
 proc debug {message} {puts stderr $message}

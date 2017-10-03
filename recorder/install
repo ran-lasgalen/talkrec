@@ -10,6 +10,7 @@ package require yaml
 proc main {} {
     set optDesc {
 	{server.arg "" "IP-адрес сервера распознавания"}
+	{recorders.arg "127.0.0.1" "IP-адреса устройств записи, через запятую"}
     }
     getOptions - $optDesc "\[OPTIONS] demo|CONFIG_FILE"
     set cfg [lindex $::argv 0]
@@ -33,17 +34,16 @@ proc main {} {
 	puts stderr $err
 	exit 1
     }
-    if {[dict exists $::config runStyle]} {
+    catch {
 	set ::runStyle [dict get $::config runStyle]
 	dict unset ::config runStyle
     }
-    foreach override [concat server [dict keys $::config]] {
-	if {[info exists ::opt($override)] && $::opt($override) ne ""} {
-	    dict set ::config $override $::opt($override)
-	}
+    if {$::opt(server) ne ""} {dict set ::config server $::opt(server)}
+    if {$::opt(recorders) ne "127.0.0.1" || ![dict exists $::config recorders]} {
+	dict set ::config recorders [split $::opt(recorders) ,]
     }
     foreach param {server headset siteId user password} {
-	if {![dict exists $::config $param]} {
+	if {![dict exists $::config $param] < 0} {
 	    append errors "\n- не указан обязательный параметр $param"
 	}
     }
@@ -59,24 +59,27 @@ proc main {} {
 }
 
 proc doInstall {} {
-    set needDebs {tcl tcllib tk rsync sox}
-    if {![dict exists $::config soundSystem]} {
-	lappend needDebs {pulseaudio pulseaudio-utils}
+    set needDebs {tcl tcllib tk rsync}
+    if {[catch {dict get $::config soundSystem} soundSystem]} {
+	lappend needDebs pulseaudio pulseaudio-utils
     } else {
-	switch {[dict get $::config soundSystem]} {
-	    pulse {lappend needDebs {pulseaudio pulseaudio-utils}}
+	switch $soundSystem {
+	    pulse {lappend needDebs pulseaudio pulseaudio-utils}
 	}
     }
     installDebs $needDebs
     run file mkdir $::configDir
     set pwFiles [glob -nocomplain -directory $::configDir *.pw]
     run file delete -- $::configDir/recorder.tcl $::configDir/sound_sender.bash {*}$pwFiles
-    createFileViaTmp [file join $::configDir recorder.yaml] rcfh {
+    createFileViaTmp [configFile recorder.yaml] rcfh {
 	run puts $rcfh [::yaml::dict2yaml $::config]
     }
     switch $::runStyle {
 	demo {
-	    run exec $::scriptdir/demo_run >@ stdout 2>@ stderr
+	    createFileViaTmp [configFile employees.yaml] fh {
+		run puts $fh "Иван Царевич: 1\nВасилиса Премудрая: 2"
+	    }
+	    puts "Установка завершена успешно. Теперь выполните\n$::scriptdir/demo_run"
 	}
 	default {
 	    puts stderr "Способ запуска $::runStyle пока не поддерживается"

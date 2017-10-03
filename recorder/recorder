@@ -344,7 +344,7 @@ proc readConfig {file} {
 }
 
 proc main {} {
-    getOptions ~/.config/talkrec/recorder.yaml {}
+    getOptions [configFile recorder.yaml] {}
     array set ::recordState {}
     if {[catch {readConfig $::opt(config)} err]} {
 	puts stderr $err
