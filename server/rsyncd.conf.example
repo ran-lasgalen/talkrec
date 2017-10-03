@@ -8,17 +8,11 @@ use chroot = false
 	write only = true
 	read only = false
 	list = false
-	#uid = user
-	#gid = user
 	incoming chmod = Du=rwx,Dg=rx,o=,Fu=rw,Fg=r
-	auth users = n*
+	auth users = *
 	secrets file = /home/user/talkrec/server/rsyncd.secrets
 
 [scripts]
-	path = /home/user/talkrec/client
+	path = /home/user/talkrec/recorder
 	read only = true
-	#uid = user
-	#gid = user
-	auth users = n*
-	secrets file = /home/user/talkrec/server/rsyncd.secrets
 
