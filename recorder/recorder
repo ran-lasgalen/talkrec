@@ -81,7 +81,7 @@ proc serveCmd {chan} {
     try {
 	switch -regexp -matchvar matches $cmd {
 	    {^\s*state\M} {tellState $chan $replyId}
-	    {^internals$} {puts $chan [list $replyId ::record [array get ::record]]}
+	    {^internals$} {puts $chan [list $replyId ::record [array get ::record] ::config $::config]}
 	    {^\s*clearError\s*$} {
 		if {$::recordState(state) eq "error"} {
 		    set ::recordState(state) noDevice
@@ -98,50 +98,41 @@ proc serveCmd {chan} {
 		set errors {}
 		if {$::recordState(state) == "ready"} {
 		    # запуск записи возможен только из состояния "готов"
-		    # очистим employeeId, employeeUUID
 		    set params [dict merge \
-				    {name {} employeeId {} employeeUUID {} siteId {}} \
 				    [dict filter $::config key siteId] \
 				    [lindex $matches 1]]
 		    if {![dict exists $params time]} {
-			set recordLimit 0
+			set recordTimeLimit 0
 		    } else {
-			set recordLimit [dict get $params time]
+			set recordTimeLimit [dict get $params time]
 		    }
-		    if {$recordLimit <= 0} {set recordLimit 600}
-		    set state [dict filter $params key name employeeId employeeUUID siteId]
-		    if {[dict get $params name] eq ""} {lappend errors "Не указано, кто говорит (name)"}
-		    if {![
-		    array set pa $params
-		updateArray ::recordState {name employeeId employeeUUID} $params
-		set rsErrors [checkNames ::recordState {name}]
-		if {"$::recordState(employeeId)$::recordState(employeeUUID)" eq ""} {lappend rsErrors "need:employeeId|employeeUUID"}
-		set cfErrors [checkKeys $::config {siteId headset}]
-		set tmErrors [checkRE ::recordState(time) time {\d+}]
-		if {![info exists pa(time)]} {
-		    set tmErrors [list "need:time"]
-		} elseif {$pa(time) <= 0} {
-		    set tmErrors [list "cond:time>0"]
+		    if {$recordTimeLimit <= 0} {set recordTimeLimit 600}
+		    set state [dict filter $params key name employeeId siteId]
+		    set errors [checkDict $state {
+			{name {имя сотрудника} .}
+			{employeeId {идентификатор сотрудника из базы} {^\w+$}}
+			{siteId {идентификатор салона из базы} {^\w+$}}
+		    }]
+		    if {[llength $errors] > 0} {
+			tellErrors $chan $replyId $errors
+		    } else {
+			array set ::recordState $state
+			set ::record(length) $recordTimeLimit
+			startRecord
+			tellState $chan $replyId
+		    }
 		} else {
-		    if {$pa(time) > 600} {set pa(time) 600}
-		    set ::record(length) $pa(time)
-		    set tmErrors {}
-		}
-		set errors [concat $rsErrors $cfErrors $tmErrors]
-		if {[llength $errors] > 0} {
-		    tellErrors $chan $replyId $errors
-		} else {
-		    startRecord
-		    tellState $chan $replyId
-		}
-	    } else {
-		tellErrors $chan $replyId [list "wrongState:$::recordState(state)"]]
+		    tellErrors $chan $replyId [list "Не могу начать запись из состояния $::recordState(state)"]
+	        }
+	    }
+	    default {
+		tellErrors $chan $replyId [list "Неизвестная команда: $cmd"]
 	    }
 	}
-	default {
-	    tellErrors $chan $replyId [list "Unrecognized command: $cmd"]]
-	}
-    }   
+    } on error {err dbg} {
+	debugStackTrace $dbg
+	tellErrors $chan $replyId [list "Ошибка разработчика: $err"]
+    }
 }
 
 proc getJabraDev {} {
@@ -165,6 +156,7 @@ proc getJabraDev {} {
     }
 }
 
+# sox -r 16000 -b 16 -c 1 -t s16 "|parec --rate=16000 --channels=1 --device=alsa_input.pci-0000_00_1b.0.analog-stereo" test.wav trim 0 3
 proc doStartChunk {} {
     switch $::record(soundSystem) {
 	pulse {
@@ -198,12 +190,9 @@ proc doStopRecord {} {
 	}
     }
     if {[file exists $::record(file)]} {
-	set fh [open $::record(file).meta.tmp w]
-	foreach key {employeeId employeeUUID name} {
-	    if {$::recordState($key) ne ""} {puts $fh "$key=$::recordState($key)"}
+	createFileViaTmp $::record(file).yaml fh {
+	    run puts $fh [::yaml::dict2yaml [dict filter [array get ::recordState] key employeeId name siteId]]
 	}
-	close $fh
-	file rename $::record(file).meta.tmp $::record(file).meta
 	::log::log info "Finished $::record(file)"
     } else {
 	::log::log error "Error recording to $::record(file)"
@@ -222,7 +211,7 @@ proc setErrorState {msg} {
 
 proc genRecordFileName {now} {
     set t [clock format $now -format "%Y%m%d_%H%M%S"]
-    return [format "%s_%s_%d_%s.wav" $t [dict get $::config siteId] [dict get $::config headset] $::record(id)]
+    return [format "%s_%s_%d_%s.wav" $t $::recordState(siteId) [dict get $::config headset] $::record(id)]
 }
 
 proc startRecord {} {
@@ -243,11 +232,11 @@ proc startRecord {} {
 proc checkRecordingProcess {} {
     switch $::record(soundSystem) {
 	pulse {
-	    if {[catch {exec kill -0 $::record(pid)}]} {
-		set fh [open $::record(file).stderr]
-		set errMsg [read $fh]
-		close $fh
-		file delete -- $::record(file).stderr $::record(file)
+	    if {[catch {run exec kill -0 $::record(pid)}]} {
+		set fh [run open $::record(file).stderr]
+		set errMsg [run read $fh]
+		run close $fh
+		run file delete -- $::record(file).stderr $::record(file)
 		setErrorState $errMsg
 		unset ::record
 	    }
