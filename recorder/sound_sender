@@ -46,7 +46,7 @@ proc runQueue {} {
 }
 
 proc sendSound {soundFile} {
-    set metaFile $soundFile.meta
+    set metaFile $soundFile.yaml
     set flagFile $soundFile.flag
     if {![file exists $metaFile]} return
     if {[catch {
@@ -55,7 +55,7 @@ proc sendSound {soundFile} {
 	set server [dict get $::config server]
 	set fh [open $flagFile w]
 	close $fh
-	run exec rsync -t -- $soundFile $metaFile "rsync://$user@$server:8873/queue"
+	run exec rsync -tz -- $soundFile $metaFile "rsync://$user@$server:8873/queue"
 	run exec rsync -t -- $flagFile "rsync://$user@$server:8873/queue"
 	run file delete -- $soundFile $metaFile $flagFile
     } err]} {
