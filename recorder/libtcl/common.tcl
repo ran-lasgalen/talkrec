@@ -5,6 +5,10 @@ package require cmdline 1.3.3
 set ::configDir [file normalize ~/.config/talkrec]
 set ::dryRun 0
 
+proc configFile {filename} {
+    file join $::configDir $filename
+}
+
 proc getOptions {defaultConfig optionsDesc {usage "options"}} {
     set optDesc $optionsDesc
     set okIfNoDefaultConfig 0
