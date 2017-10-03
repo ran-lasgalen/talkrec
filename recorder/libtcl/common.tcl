@@ -60,3 +60,28 @@ proc debugStackTrace {statusDict} {
     ::log::log debug $stackTrace
 }
 
+proc checkDict {dict checks} {
+    set errors {}
+    foreach check $checks {
+	set key [lindex $check 0]
+	if {$key eq ""} continue
+	set meaning [lindex $check 1]
+	if {$meaning eq ""} {
+	    set what $key
+	} else {
+	    set what "$meaning ($key)"
+	}
+	if {![dict exists $dict $key]} {
+	    lappend errors "$what отсутствует"
+	    continue
+	}
+	set value [dict get $dict $key]
+	switch [llength $check] {
+	    3 {
+		set re [lindex $check 2]
+		if {![regexp $re $value]} {lappend errors "$what: недопустимое значение $value"}
+	    }
+	}
+    }
+    return $errors
+}
