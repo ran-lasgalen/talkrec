@@ -1,0 +1,11 @@
+#!/usr/bin/tclsh
+set scriptDir [file normalize [file dirname [info script]]]
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
+source [file join $libtcldir install.tcl]
+
+set ::env(DISPLAY) :0
+runProcInLoop $scriptDir/talkrec-feeder
+runProcInLoop /usr/bin/rsync --daemon --no-detach --config [configFile rsyncd.conf]
+runProcInLoop $scriptDir/show-results.tcl
+vwait forever

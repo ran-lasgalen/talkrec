@@ -1,0 +1,189 @@
+#!/usr/bin/tclsh
+
+set ::scriptDir [file dirname [file normalize [info script]]]
+set ::exampleDir [file join $::scriptDir example]
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
+source [file join $libtcldir install.tcl]
+
+proc main {} {
+    set optDesc {}
+    set usage "\[OPTIONS] demo|CONFIG_FILE"
+    getOptions - $optDesc $usage
+    set cfg [lindex $::argv 0]
+    if {$cfg eq ""} {
+	puts stderr [::cmdline::usage $optDesc $usage]
+	exit 1
+    }
+    try {
+	if {$cfg eq "demo"} {
+	    set configFile [file join $::exampleDir dispatcher.yaml]
+	    set filler [dict create queue ~/queue]
+	    set ::runStyle demo
+	    set ::installStyle demo
+	} else {
+	    set configFile [file normalize $cfg]
+	    set filler [dict create queue ~/queue]
+	    set ::runStyle systemd
+	    set ::installStyle working
+	}
+	set ::config [dict merge $filler [::yaml::yaml2dict -file $configFile]]
+	set ::queueDir [dict get $::config queue]
+	if {[file pathtype $::queueDir] ne "absolute"} {set ::queueDir [file normalize $::queueDir]}
+    } on error {err dbg} {
+	debugStackTrace $dbg
+	puts stderr $err
+	exit 2
+    }
+    catch {
+	set ::runStyle [dict get $::config runStyle]
+	dict unset ::config runStyle
+    }
+    foreach param {} {
+	if {![dict exists $::config $param] < 0} {
+	    append errors "\n- не указан обязательный параметр $param"
+	}
+    }
+    if {[info exists errors]} {
+	puts stderr "Ошибки конфигурации:$errors"
+	exit 2
+    }
+    if {[catch doInstall err dbg]} {
+	debugStackTrace $dbg
+	puts stderr $err
+	exit 3
+    }
+}
+
+proc doInstall {} {
+    set needDebs {git tcl tcllib rsync}
+    if {[catch {dict get $::config asrclient} asrclient]} {
+	set asrclient [findExecutable asrclient-cli.py]
+    }
+    if {![file executable $asrclient]} {set asrclient ""}
+    if {$asrclient eq ""} {lappend needDebs {python2.7 python-setuptools python-pip protobuf-compiler}}
+    installDebs $needDebs
+    # Потоковый фидер; инструкция из python/README.md из его исходников, выкачиваемых ниже
+    if {$asrclient eq ""} {
+	set startdir [file normalize .]
+	set skcdir [file normalize ~/speechkitcloud]
+	if {![file directory $skcdir]} {
+	    run exec git clone https://github.com/yandex/speechkitcloud $skcdir >@ stdout 2>@ stderr
+	}
+	run cd $skcdir/python
+	set protofiles [glob -nocomplain asrclient/*.proto]
+	if {[llength $protofiles] > 0} {
+	    run exec protoc -I=asrclient --python_out=asrclient $protofiles >@ stdout 2>@ stderr
+	}
+	run exec python ./setup.py sdist >@ stdout 2>@ stderr
+	run cd dist
+	run sudo pip install [lindex [lreverse [glob -nocomplain asrclient-*.tar.gz]] 0]
+	run cd $startdir
+	if {$::dryRun} {
+	    set asrclient asrclient-cli.py
+	} else {
+	    set asrclient [findExecutable asrclient-cli.py]
+	}
+	if {$asrclient eq ""} {
+	    error "Не удалось найти asrclient-cli.py после его установки"
+	}
+    }
+    dict set $::config asrclient $asrclient
+    run file mkdir $::configDir
+    # Настройка файла паролей для rsyncd
+    set secretsFile [configFile rsyncd.secrets]
+    if {$::installStyle eq "demo"} {
+	run file copy -force -- [file join $::exampleDir rsyncd.secrets] $secretsFile
+    } elseif {![file exists $secretsFile]} {
+	set fh [run open $secretsFile w]
+	run close $fh
+    }    
+    run file attributes $secretsFile -permissions rw-------
+    # Настройка файла конфигурации демона rsync
+    set rsyncdConfFile [configFile rsyncd.conf]
+    set rsyncdConf [fixExamplePathsIn [readFile [file join $::exampleDir rsyncd.conf]]]
+    createFileViaTmp $rsyncdConfFile $rsyncdConf
+    # Настройка диспетчеров
+    run file mkdir $::queueDir
+    set dispatcherYaml [::yaml::dict2yaml $::config]
+    createFileViaTmp [configFile dispatcher.yaml] $dispatcherYaml
+    switch $::runStyle {
+	demo {
+	    puts "\nУстановка завершена успешно. Теперь выполните\n$::scriptDir/demo_run"
+	}
+	systemd {
+	    foreach service {talkrec-feeder.service talkrec-rsync.service} {
+		installSystemdService [file join $::exampleDir $service] $service
+	    }
+	}
+    }
+}
+
+proc readFile {file} {
+    set fh [run open $file r]
+    set res [run read $fh]
+    run close $fh
+    return $res
+}
+
+proc filesEqual {f1 f2} {
+    if {![file exists $f1] && ![file exists $f2]} {return 1}
+    if {![file exists $f1] || ![file exists $f2]} {return 0}
+    expr {[::md5::md5 -hex -file $f1] eq [::md5::md5 -hex -file $f2]}
+}
+
+proc installSystemdService {exampleFile {service ""}} {
+    set serviceDir [file normalize ~/.config/systemd/user]
+    run file mkdir $serviceDir
+    set content [fixExamplePathsIn [readFile $exampleFile]]
+    if {$service eq ""} {
+	set service [file tail $exampleFile]
+    }
+    if {![regsub {\.service\M.*} $service .service service]}
+	append service .service
+    }
+    set serviceFile [file join $serviceDir $service]
+    set tmpFile $serviceFile.tmp
+    run file delete -- $tmpFile
+    set fh [run open $tmpFile w]
+    run puts -nonewline $fh $content
+    run close $fh
+    if {[catch {readFile [list | loginctl show-user $::tcl_platform(user)]} showUser]} {
+	set lingerEnabled 0
+    } else {
+	set lingerEnabled [regexp Linger=yes $showUser]
+    }
+    if {!$lingerEnabled} {run exec loginctl enable-linger $::tcl_platform(user) >@ stdout 2>@ stderr}
+    if {[filesEqual $tmpFile $serviceFile]} {
+	run file delete -- $tmpFile
+    } else {
+	run file rename --force $tmpFile $serviceFile
+	run exec systemctl --user daemon-reload >@ stdout 2>@ stderr
+    }
+    run exec systemctl --user enable $service >@ stdout 2>@ stderr
+    catch {run exec systemctl --user stop $service >@ stdout 2>@ stderr}
+    run exec systemctl --user start $service >@ stdout 2>@ stderr
+    run exec sleep 2
+    run exec systemctl --user status $service >@ stdout 2>@ stderr
+}
+
+proc fixExamplePathsIn {text} {
+    set queueDir [file normalize $::queueDir]
+    set homeDir [file normalize ~]
+    set codeDir [file dirname $::scriptDir]
+    string map [list /home/user/talkrec $codeDir /home/user/.config/talkrec $::configDir /home/user/queue $queueDir /home/user $homeDir] text
+}
+
+proc findExecutable {bin} {
+    set PATH [split $::env(PATH) :]
+    foreach bindir {/usr/local/bin /usr/local/sbin /bin /usr/bin /sbin /usr/sbin} {
+	if {[lsearch -exact $PATH $bindir] < 0} {lappend PATH $bindir}
+    }
+    foreach bindir $PATH {
+	set fullbin [file join $bindir $bin]
+	if {[file executable $fullbin]} {return $fullbin}
+    }
+    return {}
+}
+
+main

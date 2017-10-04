@@ -190,9 +190,8 @@ proc doStopRecord {} {
 	}
     }
     if {[file exists $::record(file)]} {
-	createFileViaTmp $::record(file).yaml fh {
-	    run puts $fh [::yaml::dict2yaml [dict filter [array get ::recordState] key employeeId name siteId]]
-	}
+	createFileViaTmp $::record(file).yaml fh \
+	    [::yaml::dict2yaml [dict filter [array get ::recordState] key employeeId name siteId]]
 	::log::log info "Finished $::record(file)"
     } else {
 	::log::log error "Error recording to $::record(file)"
@@ -316,7 +315,7 @@ proc updateDict {dict allowKeys pairList} {
 }
 
 proc readConfig {file} {
-    set defaultConfig [dict create port 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460]
+    set defaultConfig [dict create recorderPort 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460]
     set readConfig [::yaml::yaml2dict -file $file]
     set config [dict merge $defaultConfig $readConfig]
     set errors {}
@@ -346,14 +345,15 @@ proc readConfig {file} {
 proc main {} {
     getOptions [configFile recorder.yaml] {}
     array set ::recordState {}
-    if {[catch {readConfig $::opt(config)} err]} {
-	puts stderr $err
+    if {[catch {readConfig $::opt(config)} err dbg]} {
+	debugStackTrace $dbg
+	::log::log error "Ошибка чтения конфигурации из $::opt(config):\n$err"
 	exit 2
     }
     set ::recordChunkLength 600
     checkRecordState
-    socket -server acceptConn [dict get $::config port]
-    ::log::log notice "Слушаю на порту TCP [dict get $::config port]"
+    socket -server acceptConn [dict get $::config recorderPort]
+    ::log::log notice "Слушаю на порту TCP [dict get $::config recorderPort]"
     vwait forever
 }
 

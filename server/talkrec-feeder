@@ -7,11 +7,12 @@ proc main {} {
     getOptions [configFile server.yaml] {}
     if {[catch {readConfig $::opt(config)} err dbg]} {
 	debugStackTrace $dbg
-	puts stderr $err
+	::log::log error "Ошибка при чтении конфигурации из $::opt(config):\n$err"
 	exit 2
     }
     file mkdir $::config(workdir)
     runQueue
+    cleanFlagWait
     vwait forever
 }
 
@@ -19,12 +20,18 @@ proc readConfig {configFile} {
     set defaultConfig [dict create workdir ~/queue speechkits [dict create 127.0.0.1:80 1]]
     set readConfig [::yaml::yaml2dict -file $configFile]
     set conf [dict merge $defaultConfig $readConfig]
+    if {[dict size [dict get $conf speechkits]] <= 0} {
+	error "Должен быть указан хотя бы один сервер SpeecKit Box (speechkits)"
+    }
     set ::config $conf
 }
 
 proc feedFile {soundFile} {
-    ::log::log info "Recognizing $soundFile..."
-    set pipe [open [list | asrclient-cli.py --key internal --server localhost --ipv4 --silent $soundFile] r]
+    arrangeWait $soundFile.flag
+    dict for {host v} [dict get $::config speechkits] break
+    if {![regexp {^(.+):(\d+)$} $host - host port]} {set port 80}
+    ::log::log info "Распознаем $soundFile на $host:$port..."
+    set pipe [open [list | asrclient-cli.py --key internal --server $host --port $port --ipv4 --silent $soundFile] r]
     set textH [open $soundFile.tmp w]
     while {![eof $pipe]} {
 	set line [gets $pipe]
@@ -33,22 +40,56 @@ proc feedFile {soundFile} {
     close $textH
     close $pipe
     file rename -force -- $soundFile.tmp $soundFile.text
-    puts "$soundFile -> $soundFile.text"
+    finishedWith $soundFile.flag
+    catch {file delete -- $soundFile}
+    ::log::log info "$soundFile -> $soundFile.text"
 }
 
 proc runQueue {} {
     set flagFiles [glob -nocomplain -directory [file normalize [dict get $::config workdir]] *.flag]
     foreach flagFile $flagFiles {
+	if {needWaitMore $flagFile} continue
 	set soundFile [file rootname $flagFile]
-	file delete -- $flagFile
-	if [catch {feedFile $soundFile} err] {
-	    file delete -- $soundFile.tmp
-	    puts stderr $err
-	} else {
-	    file delete -- $soundFile
+	if {![file exists $soundFile]} {
+	    catch {file delete -- $flagFile}
+	    continue
+	}
+	if [catch {feedFile $soundFile} err dbg] {
+	    debugStackTrace $dbg
+	    ::log::log error "Проблема при распознавании $soundFile:\n$err"
+	    catch {file delete -- $soundFile.tmp}
 	}
     }
     after 500 runQueue
+}
+
+proc needWaitMore {flagFile} {
+    if {[file mtime $flagFile] > [clock seconds]} {return 1}
+    if {![info exists ::flagWait($flagFile)]} {return 0}
+    if {$::flagWait($flagFile) > [clock seconds]} {return 1}
+    return 0
+}
+
+proc arrangeWait {flagFile} {
+    set nextAttempt [expr [clock seconds] + 1800]
+    if {[catch {file mtime $flagFile $nextAttempt}]} {
+	set ::flagWait($flagFile) $nextAttempt
+    }
+}
+
+proc finishedWith {flagFile} {
+    file delete -- $flagFile
+    unset ::flagWait($flagFile)
+}
+
+proc cleanFlagWait {} {
+    if {[array exists ::flagWait]} {
+	set now [clock seconds]
+	foreach k [array names ::flagWait] {
+	    if {$::flagWait($k) < $now} {unset ::flagWait($k)}
+	}
+    }
+    after 60000 cleanFlagWait
 }
 
 main

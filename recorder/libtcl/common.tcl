@@ -6,7 +6,7 @@ set ::configDir [file normalize ~/.config/talkrec]
 set ::dryRun 0
 
 proc configFile {filename} {
-    file join $::configDir $filename
+    file normalize [file join $::configDir $filename]
 }
 
 proc getOptions {defaultConfig optionsDesc {usage "options"}} {
@@ -28,7 +28,7 @@ proc getOptions {defaultConfig optionsDesc {usage "options"}} {
 	error "Недостаточно прав для чтения файла конфигурации $::opt(config)"
     }
     if {[file pathtype $::opt(config)] ne "absolute"} {
-	set ::opt(config) [file normalize ::opt(config)]
+	set ::opt(config) [file normalize $::opt(config)]
     }
 }
 
@@ -59,8 +59,15 @@ proc run {args} {
     }
 }
 
-proc createFileViaTmp {filename chanvar script} {
-    upvar $chanvar chan
+proc createFileViaTmp {filename chanvarOrContent args} {
+    switch [llength $args] {
+	0 {return [createFileViaTmp $filename createFileViaTmpFH {run puts $createFileViaTmpFH $chanvarOrContent}]}
+	1 {}
+	default {
+	    error "Wrong number of arguments: createFileViaTmp filename chanvarOrContent [script]"
+	}
+    }
+    upvar $chanvarOrContent chan
     set tmpname $filename.tmp
     run file delete -- $tmpname
     set chan [run open $tmpname w]

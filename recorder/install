@@ -69,17 +69,18 @@ proc doInstall {} {
     }
     installDebs $needDebs
     run file mkdir $::configDir
+    set recorderConfig [dict filter $::config key workdir headset soundSystem deviceRE fakeRecord server user password]
+    set recorderYaml [::yaml::dict2yaml $recorderConfig]
+    set managerYaml "siteId: [dict get $::config siteId]\nrecorders:"
+    foreach recorder [dict get $::config recorders] {append managerYaml "\n  - $recorder"}
     set pwFiles [glob -nocomplain -directory $::configDir *.pw]
     run file delete -- $::configDir/recorder.tcl $::configDir/sound_sender.bash {*}$pwFiles
-    createFileViaTmp [configFile recorder.yaml] rcfh {
-	run puts $rcfh [::yaml::dict2yaml $::config]
-    }
+    createFileViaTmp [configFile recorder.yaml] $recorderYaml
+    createFileViaTmp [configFile record_manager.yaml] $managerYaml
     switch $::runStyle {
 	demo {
-	    createFileViaTmp [configFile employees.yaml] fh {
-		run puts $fh "Иван Царевич: 1\nВасилиса Премудрая: 2"
-	    }
-	    puts "Установка завершена успешно. Теперь выполните\n$::scriptdir/demo_run"
+	    createFileViaTmp [configFile employees.yaml] "Иван Царевич: 1\nВасилиса Премудрая: 2"
+	    puts "\nУстановка завершена успешно. Теперь выполните\n$::scriptdir/demo_run"
 	}
 	default {
 	    puts stderr "Способ запуска $::runStyle пока не поддерживается"

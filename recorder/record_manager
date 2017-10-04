@@ -31,6 +31,7 @@ proc readConfig {configFile} {
     set conf [::yaml::yaml2dict -file $configFile]
     set errors {}
     if {![dict exists $conf recorders]} {lappend errors "не указаны адреса устройств записи (recorders)"}
+    if {![dict exists $conf siteId]} {lappend errors "не указан идентификатор салона (siteId)"}
     if {[llength $errors] > 0} {error [listOfErrors "Ошибки конфигурации" $errors]}
     return $conf
 }
@@ -113,10 +114,28 @@ proc disconnectedFromRecorder {peer} {
     }
 }
 
+proc chanPeer {chan} {
+    if {[info exists ::chanPeer($chan)]} {
+	return $::chanPeer($chan)
+    } else {
+	return $chan
+    }
+}
+
 # TODO be more careful on possible filling buffers
 proc sendRequest {chan request} {
-    if {[catch {puts $chan $request}]} {cleanChan $chan; return 0}
-    if {[fconfigure $chan -error] ne ""} {cleanChan $chan; return 0}
+    set peer [chanPeer $chan]
+    ::log::log debug "$peer <- $request"
+    if {[catch {puts $chan $request} err]} {
+	::log::log error "Ошибка отправки запроса к $peer: $err"
+	cleanChan $chan
+	return 0
+    }
+    if {[fconfigure $chan -error] ne ""} {
+	::log::log error "Ошибка в соединении с $peer: [fconfigure $chan -error]"
+	cleanChan $chan
+	return 0
+    }
     return 1
 }
 
@@ -131,6 +150,7 @@ proc handleReply {chan} {
     setIfExists ::chanPeer($chan) peer
     set replyWithId [getReply $chan]
     if {$replyWithId eq ""} return
+    ::log::log debug "$peer -> $replyWithId"
     if {![regexp {^\s*(\d+)\s+(\S.*)} $replyWithId - replyId reply]} {
 	set reply $replyWithId
 	set replyId 0
@@ -236,7 +256,10 @@ proc startRecordOnHeadset {headset button} {
     if {![setIfExists ::headsetsInUse(h_$headset) employeeId]} return
     foreach {name id} [array get ::employee] {
 	if {$id == $employeeId} {
-	    set request [list [nextCommandId] start employeeId $id name $name time 180]
+	    set request [list [nextCommandId] start \
+			     siteId [dict get $::config siteId] \
+			     employeeId $id name $name \
+			     time 180]
 	    if {[sendRequest $chan $request]} {
 		#debug "Sent request to $chan: $request"
 	    }
