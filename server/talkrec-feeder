@@ -1,9 +1,29 @@
-#!/bin/sh
-# -*- tcl -*- \
-exec tclsh "$0" ${1+"$@"}
+#!/usr/bin/tclsh
+
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
+
+proc main {} {
+    getOptions [configFile server.yaml] {}
+    if {[catch {readConfig $::opt(config)} err dbg]} {
+	debugStackTrace $dbg
+	puts stderr $err
+	exit 2
+    }
+    file mkdir $::config(workdir)
+    runQueue
+    vwait forever
+}
+
+proc readConfig {configFile} {
+    set defaultConfig [dict create workdir ~/queue speechkits [dict create 127.0.0.1:80 1]]
+    set readConfig [::yaml::yaml2dict -file $configFile]
+    set conf [dict merge $defaultConfig $readConfig]
+    set ::config $conf
+}
 
 proc feedFile {soundFile} {
-    puts "Recognizing $soundFile..."
+    ::log::log info "Recognizing $soundFile..."
     set pipe [open [list | asrclient-cli.py --key internal --server localhost --ipv4 --silent $soundFile] r]
     set textH [open $soundFile.tmp w]
     while {![eof $pipe]} {
@@ -17,7 +37,7 @@ proc feedFile {soundFile} {
 }
 
 proc runQueue {} {
-    set flagFiles [glob -nocomplain -directory [file normalize $::config(workdir)] *.flag]
+    set flagFiles [glob -nocomplain -directory [file normalize [dict get $::config workdir]] *.flag]
     foreach flagFile $flagFiles {
 	set soundFile [file rootname $flagFile]
 	file delete -- $flagFile
@@ -29,21 +49,6 @@ proc runQueue {} {
 	}
     }
     after 500 runQueue
-}
-
-proc readConfig {configFile} {
-    array set ::config {workdir ~/queue}
-    array set ::servers {localhost 1}
-}
-
-proc main {} {
-    if {[catch {readConfig ~/.config/talkrec/dispatcher.tcl} err]} {
-	puts stderr $err
-	exit 2
-    }
-    file mkdir $::config(workdir)
-    runQueue
-    vwait forever
 }
 
 main
