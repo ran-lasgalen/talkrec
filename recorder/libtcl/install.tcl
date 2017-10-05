@@ -16,28 +16,36 @@ proc installDebs {debs} {
     }
 }
 
-proc runProcInLoop {args} {
+proc prefixLines {prefix message} {
+    string cat $prefix [join [split $message \n] "\n$prefix"]
+}
+
+proc execInLoop {id args} {
     set cmd [concat | $args 2>@1]
-    ::log::log notice "Running: $args"
+    puts [prefixLines "$id: " "запускаем: $args"]
+    flush stdout
     if {[catch {open $cmd r} pipe]} {
-	::log::log error "Не удалось запустить $args:\n"
+	puts [prefixLines "$id: " "не удалось запустить $args:\n$pipe"]
+	flush stdout
 	return
     }
     fconfigure $pipe -blocking 0
-    fileevent $pipe readable [list waitProc $pipe $args]
+    fileevent $pipe readable [list waitProc $pipe $id $args]
 }
 
-proc waitProc {pipe cmd} {
-    set data [read $pipe]
-    if {$data ne ""} {puts -nonewline $data; flush stdout}
+proc waitProc {pipe id cmd} {
+    while {[gets $pipe line] >= 0} {
+	puts "$id: $line"
+    }
     if {[eof $pipe]} {
 	if {[catch {close $pipe} err]} {
-	    ::log::log error "$cmd:\n  $err\nrestart after 12 sec"
+	    puts [prefixLines "$id: " "$cmd:\n  $err\nrestart after 12 sec"]
 	} else {
-	    ::log::log notice "$cmd finished\nrestart after 12 sec"
+	    puts [prefixLines "$id: " "$cmd finished\nrestart after 12 sec"]
 	}
-	after 12000 [concat runProcInLoop $cmd]
+	after 12000 [concat execInLoop $id {*}$cmd]
     }
+    flush stdout
 }
 
 proc filesEqual {f1 f2} {

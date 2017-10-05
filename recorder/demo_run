@@ -5,7 +5,7 @@ source [file join $libtcldir common.tcl]
 source [file join $libtcldir install.tcl]
 
 set ::env(DISPLAY) :0
-runProcInLoop $scriptdir/recorder
-runProcInLoop $scriptdir/sound_sender
-runProcInLoop $scriptdir/record_manager
+execInLoop recorder $scriptdir/recorder
+execInLoop sound_sender $scriptdir/sound_sender
+execInLoop record_manager $scriptdir/record_manager
 vwait forever
