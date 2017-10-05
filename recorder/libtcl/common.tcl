@@ -62,6 +62,27 @@ proc run {args} {
     }
 }
 
+proc runExec {args} {run exec {*}$args >@ stdout 2>@ stderr}
+
+proc findExecutable {bin} {
+    set PATH [split $::env(PATH) :]
+    foreach bindir {/usr/local/bin /usr/local/sbin /bin /usr/bin /sbin /usr/sbin} {
+	if {[lsearch -exact $PATH $bindir] < 0} {lappend PATH $bindir}
+    }
+    foreach bindir $PATH {
+	set fullbin [file join $bindir $bin]
+	if {[file executable $fullbin]} {return $fullbin}
+    }
+    return {}
+}
+
+proc readFile {file} {
+    set fh [run open $file r]
+    set res [run read $fh]
+    run close $fh
+    return $res
+}
+
 proc createFileViaTmp {filename chanvarOrContent args} {
     switch [llength $args] {
 	0 {return [createFileViaTmp $filename createFileViaTmpFH {run puts $createFileViaTmpFH $chanvarOrContent}]}
