@@ -1,0 +1,10 @@
+# Папка очереди записей (feeder)
+queue: ~/queue
+
+# Путь к скрипту потоковой загрузки (asrclient-cli.py), обязательный (feeder)
+# asrclient: /usr/local/bin/asrclient-cli.py
+
+# Сервера SpeechKit Box (feeder)
+# отображение, ключ - хост:порт, значение - количество одновременных запросов
+speechkits:
+  127.0.0.1:80 : 1
