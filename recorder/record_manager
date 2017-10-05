@@ -5,7 +5,7 @@ source [file join $libtcldir common.tcl]
 package require yaml
 
 proc main {} {
-    getOptions [configFile recorder.yaml] {}
+    getOptions [configFile record_manager.yaml] {}
     try {
 	# Ключ - имя, значение - employeeId
 	array set ::employee [::yaml::yaml2dict -file [configFile employees.yaml]]
@@ -278,6 +278,17 @@ proc stopRecordOnHeadset {headset button} {
     }
 }
 
+proc formatRecordTime {time} {
+    set h [expr {$time / 3600}]
+    set m [expr {$time % 3600 / 60}]
+    set s [expr {$time % 60}]
+    if {$h > 0} {
+	format "%d:%02d:%02d" $h $m $s
+    } else {
+	format "%d:%02d" $m $s
+    }
+}
+
 proc updateButtonForHeadset {headset} {
     if {![info exists ::headsetsInUse(h_$headset)]} return
     set employeeId $::headsetsInUse(h_$headset)
@@ -296,7 +307,7 @@ proc updateButtonForHeadset {headset} {
 	    }
 	    recording {
 		if {![setIfExists st(recordTime) time]} {set time 0}
-		$button configure -background yellow -state normal -text "$time Остановить" -command [list stopRecordOnHeadset $headset $button]
+		$button configure -background yellow -state normal -text "[formatRecordTime $time] Остановить" -command [list stopRecordOnHeadset $headset $button]
 	    }
 	    default {
 		$button configure -background red -state disabled -text "Ошибка" -command {}

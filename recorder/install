@@ -10,7 +10,7 @@ package require yaml
 proc main {} {
     set optDesc {
 	{server.arg "" "IP-адрес сервера распознавания"}
-	{recorders.arg "127.0.0.1" "IP-адреса устройств записи, через запятую"}
+	{recorders.arg "" "IP-адреса устройств записи, через запятую"}
     }
     getOptions - $optDesc "\[OPTIONS] demo|CONFIG_FILE"
     set cfg [lindex $::argv 0]
@@ -38,13 +38,23 @@ proc main {} {
 	set ::runStyle [dict get $::config runStyle]
 	dict unset ::config runStyle
     }
-    if {$::opt(server) ne ""} {dict set ::config server $::opt(server)}
-    if {$::opt(recorders) ne "127.0.0.1" || ![dict exists $::config recorders]} {
-	dict set ::config recorders [split $::opt(recorders) ,]
+    if {$::opt(server) ne ""} {
+	dict set ::config server $::opt(server)
+    } elseif {![dict exists $::config server]} {
+	puts -nonewline "IP-адрес сервера распознавания: "
+	flush stdout
+	dict set ::config server [string trim [gets stdin]]
     }
-    foreach param {server headset siteId user password} {
+    if {$::opt(recorders) ne ""} {
+	dict set ::config recorders [split $::opt(recorders) ,]
+    } elseif {![dict exists $::config recorders]} {
+	dict set ::config recorders [inputList "Введите адреса станций записи" "Адрес станции"]
+    }
+    foreach param {server headset siteId user password recorders} {
 	if {![dict exists $::config $param] < 0} {
 	    append errors "\n- не указан обязательный параметр $param"
+	} elseif {[dict get $::config $param] eq ""} {
+	    append errors "\n- значение $param должно быть непустым"
 	}
     }
     if {[info exists errors]} {

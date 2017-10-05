@@ -43,7 +43,7 @@ proc htmlEscape {text} {
 }
 
 proc showNewFiles {} {
-    set textFiles [lreverse [glob -nocomplain -directory ~/queue *.text]]
+    set textFiles [lsort -decreasing -dictionary [glob -nocomplain -directory ~/queue *.text]]
     set content ""
     foreach textFile $textFiles {
 	append content "[showFile $textFile]\n"

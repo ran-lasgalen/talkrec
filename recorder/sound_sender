@@ -39,7 +39,7 @@ proc readConfig {configFile} {
 proc runQueue {} {
     rereadConfig
     set soundFiles [glob -nocomplain -directory [file normalize [dict get $::config workdir]] *.wav]
-    foreach soundFile $soundFiles {sendSound $soundFile}
+    foreach soundFile [lsort $soundFiles] {sendSound $soundFile}
     after 12000 runQueue
 }
 
@@ -56,7 +56,9 @@ proc sendSound {soundFile} {
 	run exec rsync -tz -- $soundFile $metaFile "rsync://$user@$server:8873/queue"
 	run exec rsync -t -- $flagFile "rsync://$user@$server:8873/queue"
 	run file delete -- $soundFile $metaFile $flagFile
-    } err]} {
+	::log::log info "sent $soundFile"
+    } err dbg]} {
+	debugStackTrace $dbg
 	::log::log error $err
     }
 }

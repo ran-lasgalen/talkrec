@@ -5,6 +5,7 @@ set ::exampleDir [file join $::scriptDir example]
 set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
 source [file join $libtcldir common.tcl]
 source [file join $libtcldir install.tcl]
+package require yaml
 
 proc main {} {
     set optDesc {}
@@ -28,6 +29,9 @@ proc main {} {
 	    set ::installStyle working
 	}
 	set ::config [dict merge $filler [::yaml::yaml2dict -file $configFile]]
+	if {$::installStyle eq "demo"} {
+	    dict set ::config speechkits [inputDict "Введите данные о серверах распознавания" "Адрес сервера (хост:порт)" "Количество одновременных соединений с этим сервером"]
+	}
 	set ::queueDir [dict get $::config queue]
 	if {[file pathtype $::queueDir] ne "absolute"} {set ::queueDir [file normalize $::queueDir]}
     } on error {err dbg} {
@@ -77,7 +81,7 @@ proc doInstall {} {
 	}
 	runExec python ./setup.py sdist
 	run cd dist
-	runExec sudo pip install [lindex [lreverse [glob -nocomplain asrclient-*.tar.gz]] 0]
+	runExec sudo pip install [lindex [lsort -decreasing -dictionary [glob -nocomplain asrclient-*.tar.gz]] 0]
 	run cd $startdir
 	if {$::dryRun} {
 	    set asrclient asrclient-cli.py
@@ -88,7 +92,7 @@ proc doInstall {} {
 	    error "Не удалось найти asrclient-cli.py после его установки"
 	}
     }
-    dict set $::config asrclient $asrclient
+    dict set ::config asrclient $asrclient
     run file mkdir $::configDir
     # Настройка файла паролей для rsyncd
     set secretsFile [configFile rsyncd.secrets]
@@ -123,7 +127,7 @@ proc fixExamplePathsIn {text} {
     set queueDir [file normalize $::queueDir]
     set homeDir [file normalize ~]
     set codeDir [file dirname $::scriptDir]
-    string map [list /home/user/talkrec $codeDir /home/user/.config/talkrec $::configDir /home/user/queue $queueDir /home/user $homeDir] text
+    string map [list /home/user/talkrec $codeDir /home/user/.config/talkrec $::configDir /home/user/queue $queueDir /home/user $homeDir] $text
 }
 
 main

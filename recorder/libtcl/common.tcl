@@ -1,6 +1,7 @@
 package require Tcl 8.5
 package require log 1.3
 package require cmdline 1.3.3
+package require yaml 0.3.6
 
 set ::configDir [file normalize ~/.config/talkrec]
 set ::dryRun 0
@@ -10,25 +11,32 @@ proc configFile {filename} {
 }
 
 proc getOptions {defaultConfig optionsDesc {usage "options"}} {
-    set optDesc $optionsDesc
-    set okIfNoDefaultConfig 0
-    if {[regexp {^-(.*)} $defaultConfig - defaultConfig]} {set okIfNoDefaultConfig 1}
-    lappend optDesc [list config.arg $defaultConfig "Файл конфигурации"]
-    lappend optDesc {dry-run "Не выполнять команды, меняющие ситуацию, а только показывать их"}
-    lappend optDesc {debug "Показывать отладочный вывод"}
-    array set ::opt [::cmdline::getoptions ::argv $optDesc $usage]
-    ::log::lvSuppressLE emergency 0
-    if {!$::opt(debug)} {::log::lvSuppress debug}
-    if {$::opt(dry-run)} {set ::dryRun 1}
-    if {![file exists $::opt(config)]} {
-	if {$::opt(config) ne $defaultConfig || !$okIfNoDefaultConfig} {
-	    error "Не найден файл конфигурации $::opt(config)"
+    try {
+	array set ::opt {}
+	set optDesc $optionsDesc
+	set okIfNoDefaultConfig 0
+	if {[regexp {^-(.*)} $defaultConfig - defaultConfig]} {set okIfNoDefaultConfig 1}
+	lappend optDesc [list config.arg $defaultConfig "Файл конфигурации"]
+	lappend optDesc {dry-run "Не выполнять команды, меняющие ситуацию, а только показывать их"}
+	lappend optDesc {debug "Показывать отладочный вывод"}
+	array set ::opt [::cmdline::getoptions ::argv $optDesc $usage]
+	::log::lvSuppressLE emergency 0
+	if {!$::opt(debug)} {::log::lvSuppress debug}
+	if {$::opt(dry-run)} {set ::dryRun 1}
+	if {![file exists $::opt(config)]} {
+	    if {$::opt(config) ne $defaultConfig || !$okIfNoDefaultConfig} {
+		error "Не найден файл конфигурации $::opt(config)"
+	    }
+	} elseif {![file readable $::opt(config)]} {
+	    error "Недостаточно прав для чтения файла конфигурации $::opt(config)"
 	}
-    } elseif {![file readable $::opt(config)]} {
-	error "Недостаточно прав для чтения файла конфигурации $::opt(config)"
-    }
-    if {[file pathtype $::opt(config)] ne "absolute"} {
-	set ::opt(config) [file normalize $::opt(config)]
+	if {[file pathtype $::opt(config)] ne "absolute"} {
+	    set ::opt(config) [file normalize $::opt(config)]
+	}
+    } on error {err dbg} {
+	debugStackTrace $dbg
+	puts stderr $err
+	exit 1
     }
 }
 
@@ -86,7 +94,7 @@ proc readFile {file} {
 proc createFileViaTmp {filename chanvarOrContent args} {
     switch [llength $args] {
 	0 {return [createFileViaTmp $filename createFileViaTmpFH {run puts $createFileViaTmpFH $chanvarOrContent}]}
-	1 {}
+	1 {set script [lindex $args 0]}
 	default {
 	    error "Wrong number of arguments: createFileViaTmp filename chanvarOrContent [script]"
 	}

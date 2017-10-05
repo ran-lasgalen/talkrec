@@ -190,9 +190,14 @@ proc doStopRecord {} {
 	}
     }
     if {[file exists $::record(file)]} {
-	createFileViaTmp $::record(file).yaml fh \
-	    [::yaml::dict2yaml [dict filter [array get ::recordState] key employeeId name siteId]]
-	::log::log info "Finished $::record(file)"
+	try {
+	    createFileViaTmp $::record(file).yaml \
+		[::yaml::dict2yaml [dict filter [array get ::recordState] key employeeId name siteId]]
+	    ::log::log info "Finished $::record(file)"
+	} on error {err dbg} {
+	    debugStackTrace $dbg
+	    ::log::log error "Error saving meta information to $::record(file).yaml:\n  $err"
+	}
     } else {
 	::log::log error "Error recording to $::record(file)"
     }
@@ -232,11 +237,8 @@ proc checkRecordingProcess {} {
     switch $::record(soundSystem) {
 	pulse {
 	    if {[catch {run exec kill -0 $::record(pid)}]} {
-		set fh [run open $::record(file).stderr]
-		set errMsg [run read $fh]
-		run close $fh
+		setErrorState [readFile $::record(file).stderr]
 		run file delete -- $::record(file).stderr $::record(file)
-		setErrorState $errMsg
 		unset ::record
 	    }
 	}

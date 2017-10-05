@@ -88,3 +88,36 @@ proc installSystemdService {exampleFile {service ""}} {
     runExec sleep 2
     runExec systemctl --user status $service
 }
+
+proc inputDict {dictPrompt keyPrompt valuePrompt} {
+    set res [dict create]
+    puts $dictPrompt
+    while {1} {
+	puts -nonewline "Enter - завершить ввод, \\ - начать сначала\n$keyPrompt: "
+	flush stdout
+	set k [gets stdin]
+	if {$k eq ""} {return $res}
+	if {$k eq "\\"} {set res [dict create]; continue}
+	set key [string trim $k]
+	if {[dict exists $res $key]} {set dflt " \[[dict get $res $key]]"} else {set dflt {}}
+	puts -nonewline "$valuePrompt$dflt: "
+	flush stdout
+	set value [string trim [gets stdin]]
+	dict set res $key $value
+	puts "Введено: [list $res]"
+    }
+}
+
+proc inputList {listPrompt elementPrompt} {
+    set res {}
+    puts $listPrompt
+    while {1} {
+	puts -nonewline "Enter - завершить ввод, \\ - начать сначала\n$elementPrompt: "
+	flush stdout
+	set e [gets stdin]
+	if {$e eq ""} {return $res}
+	if {$e eq "\\"} {set res {}; continue}
+	lappend res [string trim $e]
+	puts "Введено: [list $res]"
+    }
+}

@@ -10,7 +10,7 @@ proc main {} {
 	::log::log error "Ошибки при чтении конфигурации из $::opt(config):\n$err"
 	exit 2
     }
-    file mkdir $::config(queue)
+    file mkdir [dict get $::config queue]
     runQueue
     cleanFlagWait
     vwait forever
@@ -36,33 +36,35 @@ proc feedFile {soundFile} {
     dict for {host v} [dict get $::config speechkits] break
     if {![regexp {^(.+):(\d+)$} $host - host port]} {set port 80}
     ::log::log info "Распознаем $soundFile на $host:$port..."
-    set pipe [open [list | [dict get $::config asrclient] --key internal --server $host --port $port --ipv4 --silent $soundFile] r]
-    set textH [open $soundFile.tmp w]
-    while {![eof $pipe]} {
-	set line [gets $pipe]
-	if {[regexp {^from } $line] || [regexp {^\s*$} $line]} {} else {puts $textH $line}
+    set pipe [run open [list | [dict get $::config asrclient] --key internal --server $host --port $port --ipv4 --silent $soundFile] r]
+    set textH [run open $soundFile.tmp w]
+    if {!$::dryRun} {		# guard for eof on fake channel
+	while {![eof $pipe]} {
+	    set line [gets $pipe]
+	    if {[regexp {^from } $line] || [regexp {^\s*$} $line]} {} else {run puts $textH $line}
+	}
     }
-    close $textH
-    close $pipe
-    file rename -force -- $soundFile.tmp $soundFile.text
+    run close $textH
+    run close $pipe
+    run file rename -force -- $soundFile.tmp $soundFile.text
     finishedWith $soundFile.flag
-    catch {file delete -- $soundFile}
+    catch {run file delete -- $soundFile}
     ::log::log info "$soundFile -> $soundFile.text"
 }
 
 proc runQueue {} {
     set flagFiles [glob -nocomplain -directory [file normalize [dict get $::config queue]] *.flag]
-    foreach flagFile $flagFiles {
-	if {needWaitMore $flagFile} continue
+    foreach flagFile [lsort $flagFiles] {
+	if {[needWaitMore $flagFile]} continue
 	set soundFile [file rootname $flagFile]
 	if {![file exists $soundFile]} {
-	    catch {file delete -- $flagFile}
+	    catch {run file delete -- $flagFile}
 	    continue
 	}
 	if [catch {feedFile $soundFile} err dbg] {
 	    debugStackTrace $dbg
 	    ::log::log error "Проблема при распознавании $soundFile:\n$err"
-	    catch {file delete -- $soundFile.tmp}
+	    catch {run file delete -- $soundFile.tmp}
 	}
     }
     after 500 runQueue
@@ -77,14 +79,14 @@ proc needWaitMore {flagFile} {
 
 proc arrangeWait {flagFile} {
     set nextAttempt [expr [clock seconds] + 1800]
-    if {[catch {file mtime $flagFile $nextAttempt}]} {
+    if {[catch {run file mtime $flagFile $nextAttempt}]} {
 	set ::flagWait($flagFile) $nextAttempt
     }
 }
 
 proc finishedWith {flagFile} {
-    file delete -- $flagFile
-    unset ::flagWait($flagFile)
+    run file delete -- $flagFile
+    if {[info exists ::flagWait($flagFile)]} {unset ::flagWait($flagFile)}
 }
 
 proc cleanFlagWait {} {
