@@ -68,16 +68,16 @@ proc doInstall {} {
 	set startdir [file normalize .]
 	set skcdir [file normalize ~/speechkitcloud]
 	if {![file directory $skcdir]} {
-	    run exec git clone https://github.com/yandex/speechkitcloud $skcdir >@ stdout 2>@ stderr
+	    runExec git clone https://github.com/yandex/speechkitcloud $skcdir
 	}
 	run cd $skcdir/python
 	set protofiles [glob -nocomplain asrclient/*.proto]
 	if {[llength $protofiles] > 0} {
-	    run exec protoc -I=asrclient --python_out=asrclient $protofiles >@ stdout 2>@ stderr
+	    runExec protoc -I=asrclient --python_out=asrclient $protofiles
 	}
-	run exec python ./setup.py sdist >@ stdout 2>@ stderr
+	runExec python ./setup.py sdist
 	run cd dist
-	run sudo pip install [lindex [lreverse [glob -nocomplain asrclient-*.tar.gz]] 0]
+	runExec sudo pip install [lindex [lreverse [glob -nocomplain asrclient-*.tar.gz]] 0]
 	run cd $startdir
 	if {$::dryRun} {
 	    set asrclient asrclient-cli.py
