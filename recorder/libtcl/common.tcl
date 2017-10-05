@@ -43,10 +43,13 @@ proc fileModified {file} {
 }
 
 proc listOfErrors {context errors} {
-    set res $context
-    append res ":"
-    foreach err $errors {append res "\n- " $err}
-    return $res
+    if {$context eq ""} {
+	set res {}
+    } else {
+	set res [list [string cat $context :]]
+    }
+    foreach err $errors {lappend res [string cat "  - " $err]}
+    join $res "\n"
 }
 
 proc run {args} {
