@@ -119,71 +119,11 @@ proc doInstall {} {
     }
 }
 
-proc readFile {file} {
-    set fh [run open $file r]
-    set res [run read $fh]
-    run close $fh
-    return $res
-}
-
-proc filesEqual {f1 f2} {
-    if {![file exists $f1] && ![file exists $f2]} {return 1}
-    if {![file exists $f1] || ![file exists $f2]} {return 0}
-    expr {[::md5::md5 -hex -file $f1] eq [::md5::md5 -hex -file $f2]}
-}
-
-proc installSystemdService {exampleFile {service ""}} {
-    set serviceDir [file normalize ~/.config/systemd/user]
-    run file mkdir $serviceDir
-    set content [fixExamplePathsIn [readFile $exampleFile]]
-    if {$service eq ""} {
-	set service [file tail $exampleFile]
-    }
-    if {![regsub {\.service\M.*} $service .service service]}
-	append service .service
-    }
-    set serviceFile [file join $serviceDir $service]
-    set tmpFile $serviceFile.tmp
-    run file delete -- $tmpFile
-    set fh [run open $tmpFile w]
-    run puts -nonewline $fh $content
-    run close $fh
-    if {[catch {readFile [list | loginctl show-user $::tcl_platform(user)]} showUser]} {
-	set lingerEnabled 0
-    } else {
-	set lingerEnabled [regexp Linger=yes $showUser]
-    }
-    if {!$lingerEnabled} {run exec loginctl enable-linger $::tcl_platform(user) >@ stdout 2>@ stderr}
-    if {[filesEqual $tmpFile $serviceFile]} {
-	run file delete -- $tmpFile
-    } else {
-	run file rename --force $tmpFile $serviceFile
-	run exec systemctl --user daemon-reload >@ stdout 2>@ stderr
-    }
-    run exec systemctl --user enable $service >@ stdout 2>@ stderr
-    catch {run exec systemctl --user stop $service >@ stdout 2>@ stderr}
-    run exec systemctl --user start $service >@ stdout 2>@ stderr
-    run exec sleep 2
-    run exec systemctl --user status $service >@ stdout 2>@ stderr
-}
-
 proc fixExamplePathsIn {text} {
     set queueDir [file normalize $::queueDir]
     set homeDir [file normalize ~]
     set codeDir [file dirname $::scriptDir]
     string map [list /home/user/talkrec $codeDir /home/user/.config/talkrec $::configDir /home/user/queue $queueDir /home/user $homeDir] text
-}
-
-proc findExecutable {bin} {
-    set PATH [split $::env(PATH) :]
-    foreach bindir {/usr/local/bin /usr/local/sbin /bin /usr/bin /sbin /usr/sbin} {
-	if {[lsearch -exact $PATH $bindir] < 0} {lappend PATH $bindir}
-    }
-    foreach bindir $PATH {
-	set fullbin [file join $bindir $bin]
-	if {[file executable $fullbin]} {return $fullbin}
-    }
-    return {}
 }
 
 main
