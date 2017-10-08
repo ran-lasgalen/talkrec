@@ -5,15 +5,22 @@ source [file join $libtcldir common.tcl]
 
 proc main {} {
     getOptions [configFile dispatcher.yaml] {}
-    if {[catch {readConfig $::opt(config)} err dbg]} {
-	debugStackTrace $dbg
-	::log::log error "Ошибки при чтении конфигурации из $::opt(config):\n$err"
-	exit 2
-    }
+    if {![rereadConfig]} {exit 2}
     file mkdir [dict get $::config queue]
     runQueue
     cleanFlagWait
     vwait forever
+}
+
+proc rereadConfig {} {
+    if {[fileModified $::opt(config)]} {
+	if {[catch {readConfig $::opt(config)} err dbg]} {
+	    debugStackTrace $dbg
+	    ::log::log error "Ошибки при чтении конфигурации из $::opt(config):\n$err"
+	    return 0
+	}
+    }
+    return 1
 }
 
 proc readConfig {configFile} {
