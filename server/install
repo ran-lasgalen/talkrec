@@ -71,7 +71,7 @@ proc doInstall {} {
     if {$asrclient eq ""} {
 	set startdir [file normalize .]
 	set skcdir [file normalize ~/speechkitcloud]
-	if {![file directory $skcdir]} {
+	if {![file isdirectory $skcdir]} {
 	    runExec git clone https://github.com/yandex/speechkitcloud $skcdir
 	}
 	run cd $skcdir/python
