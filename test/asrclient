@@ -1,0 +1,14 @@
+#!/usr/bin/tclsh
+package require cmdline
+
+array set ::opt [::cmdline::getoptions ::argv {
+    {-key.arg "" ""}
+    {-server.arg "" ""}
+    {-port.arg "" ""}
+    {-ipv4 ""}
+    {-silent ""}
+}]
+
+puts [array get ::opt]
+set soundFile [lindex $::argv 0]
+puts $soundFile
