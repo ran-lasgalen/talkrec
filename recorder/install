@@ -11,6 +11,8 @@ proc main {} {
     set optDesc {
 	{server.arg "" "IP-адрес сервера распознавания"}
 	{recorders.arg "" "IP-адреса устройств записи, через запятую"}
+	{headset.arg "" "Номер гарнитуры на этой станции записи"}
+	{site.arg "" "Номер салона"}
     }
     getOptions - $optDesc "\[OPTIONS] demo|CONFIG_FILE"
     set cfg [lindex $::argv 0]
@@ -50,6 +52,8 @@ proc main {} {
     } elseif {![dict exists $::config recorders]} {
 	dict set ::config recorders [inputList "Введите адреса станций записи" "Адрес станции"]
     }
+    if {$::opt(headset) ne ""} {dict set ::config headset $::opt(headset)}
+    if {$::opt(site) ne ""} {dict set ::config siteId $::opt(site)}
     foreach param {server headset siteId user password recorders} {
 	if {![dict exists $::config $param] < 0} {
 	    append errors "\n- не указан обязательный параметр $param"
