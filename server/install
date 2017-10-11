@@ -77,7 +77,7 @@ proc doInstall {} {
 	run cd $skcdir/python
 	set protofiles [glob -nocomplain asrclient/*.proto]
 	if {[llength $protofiles] > 0} {
-	    runExec protoc -I=asrclient --python_out=asrclient $protofiles
+	    runExec protoc -I=asrclient --python_out=asrclient {*}$protofiles
 	}
 	runExec python ./setup.py sdist
 	run cd dist
