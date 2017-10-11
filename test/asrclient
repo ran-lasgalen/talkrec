@@ -9,6 +9,20 @@ array set ::opt [::cmdline::getoptions ::argv {
     {-silent ""}
 }]
 
-puts [array get ::opt]
 set soundFile [lindex $::argv 0]
-puts $soundFile
+
+proc back_report {n} {
+    puts "Обратный отсчет: $n"
+    flush stdout
+    incr n -1
+    if {$n >= 0} {after 1000 [list back_report $n]} else {exit 0}
+}
+
+if {![regexp {(\d+)\.\w+$} $soundFile - n]} {set n 1}
+
+switch $n {
+    0 {socket 127.0.0.2 11}
+    3 {back_report 3; after 1500 {error 500}}
+    5 {back_report 5; after 4500 {exit 1}}
+    default {back_report $n}
+}

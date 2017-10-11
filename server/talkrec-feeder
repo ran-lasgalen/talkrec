@@ -11,7 +11,6 @@ proc main {} {
     runChecks
     after 1000 runQueue
     cleanFlagWait
-    vwait forever
 }
 
 proc rereadConfig {} {
@@ -54,7 +53,7 @@ proc feedFile {soundFile server} {
     safelog {info "Распознаем $soundFile на $host:$port..."}
     # По мере поступления данных файл открывается на дозапись. Сейчас его надо
     # очистить.
-    [run close [run open $soundFile.tmp w]]
+    run close [run open $soundFile.tmp w]
     # Пытаемся запустить скрипт загрузки
     set pipe [run open [list | [dict get $::config asrclient] --key internal --server $host --port $port --ipv4 --silent $soundFile] r]
     # Если запустить получилось, то работа на сервере стартовала
@@ -117,7 +116,9 @@ proc runQueue {} {
 	    continue
 	}
 	if {[needWaitMore $flagFile]} continue
+	safelog {debug $flagFile}
 	set server [selectServerFor $soundFile]
+	safelog {debug "selected $server"}
 	switch $server {
 	    jobInProgress continue
 	    "" break
@@ -177,15 +178,15 @@ proc ensureServerState {server} {
 proc selectServerFor {job} {
     set candidates {}
     set now [clock seconds]
-    dict for {server nmax} [dict keys $::speechkits] {
-	if {![dict exists ::serverState $server]} continue
+    dict for {server nmax} $::speechkits {
+	if {![dict exists $::serverState $server]} continue
 	dict with ::serverState $server {
 	    if {[dict exists $jobs $job]} {return jobInProgress}
 	    if {!$connect} continue
 	    if {$checking > 0 && $now - $checking >= $::yaCheckInterval(checkIsGood)} continue
 	    if {$errors >= 2 && $now - $lastErrorT <= $::yaCheckInterval(error)} continue
 	    set free [expr {$nmax - [dict size $jobs]}]
-	    if {$free > 0} {lappend candidates [lrepeat $free $server]}
+	    if {$free > 0} {lappend candidates {*}[lrepeat $free $server]}
 	}
     }
     set ncand [llength $candidates]
@@ -313,7 +314,6 @@ proc since {fmt t now} {
 }
 
 proc reportServerState {} {
-    set report {}
     set now [clock seconds]
     dict for {server state} $::serverState {
 	set rep_s "$server:"
@@ -340,4 +340,4 @@ proc reportServerState {} {
     join $report "\n"
 }
 
-if {![info exists NoRun]} main
+if {![info exists NoRun]} {main; vwait forever}
