@@ -62,10 +62,10 @@ proc listOfErrors {context errors} {
 
 proc run {args} {
     if {$::dryRun} {
-	::log::log info [concat {Would run:} $args]
+	safelog {info [concat {Would run:} $args]}
 	return dryRun
     } else {
-	::log::log debug $args
+	safelog {debug $args}
 	{*}$args
     }
 }
@@ -111,9 +111,21 @@ proc createFileViaTmp {filename chanvarOrContent args} {
     run file rename -force -- $tmpname $filename
 }
 
+proc safelog {logdata} {
+    if {[catch {uplevel 1 [concat ::log::log $logdata]} err dbg]} {
+	debugStackTrace $dbg
+    }
+}
+
 proc debugStackTrace {statusDict} {
     catch {dict get $statusDict -errorinfo} stackTrace
-    ::log::log debug $stackTrace
+    catch {::log::log debug $stackTrace}
+}
+
+proc catchDbg {script} {
+    if {[catch {uplevel 1 $script} err dbg]} {
+	debugStackTrace $dbg
+    }
 }
 
 proc checkDict {dict checks} {
