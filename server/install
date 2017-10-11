@@ -65,7 +65,7 @@ proc doInstall {} {
 	set asrclient [findExecutable asrclient-cli.py]
     }
     if {![file executable $asrclient]} {set asrclient ""}
-    if {$asrclient eq ""} {lappend needDebs {python2.7 python-setuptools python-pip protobuf-compiler}}
+    if {$asrclient eq ""} {lappend needDebs python2.7 python-setuptools python-pip protobuf-compiler}
     installDebs $needDebs
     # Потоковый фидер; инструкция из python/README.md из его исходников, выкачиваемых ниже
     if {$asrclient eq ""} {
