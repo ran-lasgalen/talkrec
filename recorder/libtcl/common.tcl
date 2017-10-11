@@ -153,3 +153,22 @@ proc checkDict {dict checks} {
     }
     return $errors
 }
+
+proc splitAddr {addr defaultPort} {
+    if {[regexp {^([\w.-]+):(\d+)$} $addr - host port]} {return [list $host $port]}
+    if {[regexp {^\[([\d:]+)\]:(\d+)$} $addr - host port]} {return [list $host $port]}
+    if {[regexp {^(\S+)\s+(\d+)$} $addr - host port]} {return [list $host $port]}
+    return [list $addr $defaultPort]
+}
+
+proc formatTimeInterval {seconds} {
+    if {$seconds < 0} {return "-[formatTimeInterval [expr {abs($seconds)}]]"}
+    set h [expr {$seconds / 3600}]
+    set m [expr {$seconds % 3600 / 60}]
+    set s [expr {$seconds % 60}]
+    if {$h > 0} {
+	format "%d:%02d:%02d" $h $m $s
+    } else {
+	format "%d:%02d" $m $s
+    }
+}
