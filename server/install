@@ -65,19 +65,19 @@ proc doInstall {} {
 	set asrclient [findExecutable asrclient-cli.py]
     }
     if {![file executable $asrclient]} {set asrclient ""}
-    if {$asrclient eq ""} {lappend needDebs {python2.7 python-setuptools python-pip protobuf-compiler}}
+    if {$asrclient eq ""} {lappend needDebs python2.7 python-setuptools python-pip protobuf-compiler}
     installDebs $needDebs
     # Потоковый фидер; инструкция из python/README.md из его исходников, выкачиваемых ниже
     if {$asrclient eq ""} {
 	set startdir [file normalize .]
 	set skcdir [file normalize ~/speechkitcloud]
-	if {![file directory $skcdir]} {
+	if {![file isdirectory $skcdir]} {
 	    runExec git clone https://github.com/yandex/speechkitcloud $skcdir
 	}
 	run cd $skcdir/python
 	set protofiles [glob -nocomplain asrclient/*.proto]
 	if {[llength $protofiles] > 0} {
-	    runExec protoc -I=asrclient --python_out=asrclient $protofiles
+	    runExec protoc -I=asrclient --python_out=asrclient {*}$protofiles
 	}
 	runExec python ./setup.py sdist
 	run cd dist
