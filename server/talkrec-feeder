@@ -64,6 +64,7 @@ proc feedFile {soundFile server} {
 	jobStoppedOnServer $soundFile $server
 	run close $pipe
     } else {
+	fconfigure $pipe -blocking 0
 	fileevent $pipe readable [list getRecognition $soundFile $server $pipe]
     }
 }
@@ -93,21 +94,21 @@ proc getRecognition {soundFile server pipe} {
 	    run file rename -force -- $soundFile.tmp $soundFile.text
 	    finishedWith $soundFile.flag
 	    catch {run file delete -- $soundFile}
-	safelog {info "$soundFile -> $soundFile.text"}
+	    safelog {info "$soundFile -> $soundFile.text"}
 	}
     }
 }
 
 proc runQueue {} {
     rereadConfig
-    set makeReportFile [file join [dict get $::config queue] report]
-    set reportFile $makeReportFile.txt
-    if {[file exists $makeReportFile]} {catchDbg {
-	file delete -- $makeReportFile
-	set h [open $reportFile w]
-	puts $h [reportServerState]
+    catchDbg {
+	set reportFile [file join [dict get $::config queue] report]
+	set report [reportServerState]
+	set h [open $reportFile.tmp w]
+	puts $h $report
 	close $h
-    }}
+	file rename -force -- $reportFile.tmp $reportFile
+    }
     set flagFiles [glob -nocomplain -directory [file normalize [dict get $::config queue]] *.flag]
     foreach flagFile [lsort $flagFiles] {
 	set soundFile [file rootname $flagFile]
@@ -116,9 +117,7 @@ proc runQueue {} {
 	    continue
 	}
 	if {[needWaitMore $flagFile]} continue
-	safelog {debug $flagFile}
 	set server [selectServerFor $soundFile]
-	safelog {debug "selected $server"}
 	switch $server {
 	    jobInProgress continue
 	    "" break
@@ -315,6 +314,7 @@ proc since {fmt t now} {
 
 proc reportServerState {} {
     set now [clock seconds]
+    set report [list "Servers state report at [clock format $now -format {%H:%M:%S %d.%m.%Y}]\n"]
     dict for {server state} $::serverState {
 	set rep_s "$server:"
 	dict with state {

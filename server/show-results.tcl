@@ -55,10 +55,24 @@ proc showNewFiles {} {
     return "<html><head><title>$title</title></head><body>\n<h1>$title</h1>\n$content</body></html>"
 }
 
+proc showReport {} {
+    set content "Report unavailable"
+    catch {
+	set h [open ~/queue/report r]
+	set content [read $h]
+	close $h
+    }
+    return $content
+}
+
 proc serveRequest {chan addr port} {
     fconfigure $chan -translation auto -buffering line
     set line [gets $chan]
-    puts $chan "HTTP/1.0 200 OK\nContent-Type: text/html; charset=utf-8\n\n[showNewFiles]"
+    if {[regexp { /report } $line]} {
+	puts $chan "HTTP/1.0 200 OK\nContent-Type: text/plain; charset=utf-8\n\n[showReport]"
+    } else {
+	puts $chan "HTTP/1.0 200 OK\nContent-Type: text/html; charset=utf-8\n\n[showNewFiles]"
+    }
     close $chan
 }
 
