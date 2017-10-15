@@ -70,6 +70,12 @@ proc run {args} {
     }
 }
 
+proc run! {args} {
+    if {$::dryRun} {set lvl info} {set lvl debug}
+    ::log::log $lvl $args
+    {*}$args
+}
+
 proc runExec {args} {run exec {*}$args >@ stdout 2>@ stderr}
 
 proc findExecutable {bin} {
