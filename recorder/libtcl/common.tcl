@@ -117,6 +117,12 @@ proc createFileViaTmp {filename chanvarOrContent args} {
     run file rename -force -- $tmpname $filename
 }
 
+proc safelog {logdata} {
+    if {[catch {uplevel 1 [concat ::log::log $logdata]} err dbg]} {
+	debugStackTrace $dbg
+    }
+}
+
 proc debugStackTrace {statusDict} {
     catch {dict get $statusDict -errorinfo} stackTrace
     ::log::log debug $stackTrace
