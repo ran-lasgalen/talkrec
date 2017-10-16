@@ -39,35 +39,10 @@ proc getCommand {chan} {
     }
 }
 
-# proc checkNames {arr names} {
-#     upvar $arr a
-#     set errors {}
-#     foreach name $names {
-# 	if {![info exists a($name)]} {lappend errors need:$name}
-#     }
-#     return $errors
-# }
-
-# proc checkKeys {dict keys} {
-#     set errors {}
-#     foreach key $keys {
-# 	if {![dict exists $dict $key]} {lappend errors need:$key}
-#     }
-#     return $errors
-# }
-
-# proc checkRE {var name re} {
-#     upvar $var v
-#     if {![info exists v]} {
-# 	return [list need:$name]
-#     } elseif {[regexp "^$re\$" $v]} {
-# 	return {}
-#     } else {
-# 	return [list "re:$name!$re"]
-#     }
-# }
-
-proc tellState {chan replyId} {puts $chan [concat $replyId [array get ::recordState] [array get ::intent] [dict filter $::config key headset]]}
+proc tellState {chan replyId} {
+    set dct [dict merge [array get ::recordState] [array get ::intent] [list mode $::mode] [dict filter $::config key headset]]
+    puts $chan [concat $replyId $dct]
+}
 
 proc tellErrors {chan replyId errors} {puts $chan [list $replyId errors $errors]}
 
@@ -95,6 +70,12 @@ proc serveCmd {chan} {
 		checkRecordState
 		tellState $chan $replyId
 	    }
+	    {^\s*end\s*$} {
+		array set ::intent {mode end}
+		stopRecord
+		checkRecordState
+		tellState $chan $replyId
+	    }
 	    {^\s*start\s+(\S.*)} {
 		if {[catch {dict merge \
 				[dict filter $::config key siteId auto] \
@@ -103,17 +84,17 @@ proc serveCmd {chan} {
 		    debugStackTrace $dbg
 		    tellErrors $chan $replyId [list $params]
 		} else {
-		    if {![catch {dict get $params mode} mode] && $mode eq "forbid"} {
+		    if {![catch {dict get $params mode} mode] && $mode in {forbid end}} {
 			set errors {}
 		    } else {
 			set errors [checkDict $params {
-			    {mode "режим записи: auto, manual или forbid" {^(auto|manual|forbid)$}}
+			    {mode "режим записи: auto, manual, forbid или end" {^(auto|manual|forbid|en)$}}
 			    {employeeId "идентификатор сотрудника" {^\d+$}}
 			    {siteId "идентификатор салона" {^\d+$}}
 			    {maxTime "максимальное время записи" {^\d+$}}
 			}]
 		    }
-		    if {$mode ne "forbid"} && [catch {checkAutoParams $params} err]} {lappend $errors $err}
+		    if {$mode ni {forbid end} && [catch {checkAutoParams $params} err]} {lappend $errors $err}
 		    if {[llength $errors] > 0} {
 			tellErrors $chan $replyId $errors
 		    } else {
@@ -181,7 +162,7 @@ proc doStartRecord {} {
 		    }
 		}
 	    }
-	    set pipeCmd [list | sox -r 16000 -b 16 -c 1 -t -16 "|parec --rate=16000 --channels=1 --device=$::record(device)" $::record(file) 2>@ $::record(file).stderr]
+	    set pipeCmd [list | sox -r 16000 -b 16 -c 1 -t s16 "|parec --rate=16000 --channels=1 --device=$::record(device)" $::record(file) {*}$params 2> $::record(file).stderr]
 	    #set ::record(pid) [run exec parecord --rate=16000 --channels=1 --device=$::record(device) $::record(file) 2> $::record(file).stderr &]
 	    set ::record(pipe) [run open $pipeCmd r]
 	    if {$::dryRun} {
@@ -196,8 +177,8 @@ proc doStartRecord {} {
 	default {error "Unsupported sound system $::record(soundSystem)"}
     }
     fconfigure $::record(pipe) -blocking 0
-    fileevent $::record(pipe) readable [list watchRecorder {array get ::intent} $::record(pipe)]
-    safelog {info "Started record"}
+    fileevent $::record(pipe) readable [list watchRecorder [array get ::intent] $::record(pipe)]
+    safelog {info "Started record in $::intent(mode) mode"}
 }
 
 # Главным образом обработчик завершения
@@ -205,7 +186,7 @@ proc watchRecorder {intentList pipe} {
     # в stdout ничего интересного от программы не ждем
     read $pipe
     if {[eof $pipe]} {
-	set resultFile [genRecordFileName intentList]
+	set resultFile [file join [file normalize [dict get $::config workdir]] [genRecordFileName $intentList]]
 	if {[catch {close $pipe} err] && $::recordState(state) ne "stopping"} {
 	    # если stopping, то ошибка ожидаемая, ибо kill
 	    # а тут реальная ошибка
@@ -240,7 +221,6 @@ proc watchRecorder {intentList pipe} {
 			[::yaml::dict2yaml \
 			     [dict merge \
 				  [dict filter $intentList key employeeId name siteId] \
-				  [dict filter [array get ::recordState] key recordTime] \
 				  $autoParams]]
 		    safelog {info "Finished $resultFile"}
 		} on error {err dbg} {
@@ -256,36 +236,6 @@ proc watchRecorder {intentList pipe} {
 	checkRecordState
     }
 }
-
-# proc doStopRecord {} {
-#     switch $::record(soundSystem) {
-# 	pulse {
-# 	    catch {run exec kill $::record(pid)}
-# 	    if {[file exists $::record(file).stderr] && [file size $::record(file).stderr] == 0} {
-# 		file delete $::record(file).stderr
-# 	    }
-# 	}
-# 	fake {
-# 	    if {[catch {file copy -- $::record(device) $::record(file)} err]} {catch {
-# 		set fh [open $::record(file).stderr w]
-# 		puts $fh $err
-# 		close $fh
-# 	    }}
-# 	}
-#     }
-#     if {[file exists $::record(file)]} {
-# 	try {
-# 	    createFileViaTmp $::record(file).yaml \
-# 		[::yaml::dict2yaml [dict filter [array get ::recordState] key employeeId name siteId]]
-# 	    ::log::log info "Finished $::record(file)"
-# 	} on error {err dbg} {
-# 	    debugStackTrace $dbg
-# 	    ::log::log error "Error saving meta information to $::record(file).yaml:\n  $err"
-# 	}
-#     } else {
-# 	::log::log error "Error recording to $::record(file)"
-#     }
-# }
 
 proc setErrorState {msg} {
     unset -nocomplain ::recordState(recordTime) ::recordState(errorMessage)
@@ -309,6 +259,11 @@ proc genRecordFileName {intentList} {
 }
 
 proc doIntended {} {
+    set ::mode $::intent(mode)
+    if {$::intent(mode) eq "end"} {
+	safelog {notice "Exit requested"}
+	exit
+    }
     if {$::recordState(state) ne "ready" ||
 	$::intent(mode) eq "forbid"} return
     set ::record(file) [file join [file normalize [dict get $::config workdir]] current.wav]
@@ -317,7 +272,10 @@ proc doIntended {} {
     } else {
 	switch $::intent(mode) {
 	    auto {set ::recordState(state) silence}
-	    manual {markStartRecord}
+	    manual {
+		markStartRecord
+		set ::intent(mode) auto
+	    }
 	    default {
 		# should not be here
 		safelog {error "recording started in unsupported mode '$::intent(mode)', interpreted as manual"}
@@ -327,39 +285,11 @@ proc doIntended {} {
     }
 }
 
-# proc startRecord {} {
-#     set now [clock seconds]
-#     set ::record(id) [format "%08x" $now]
-#     set ::record(file) [genRecordFileName $now]
-#     if {[catch doStartRecord errMsg]} {
-# 	setErrorState $errMsg
-#     } else {
-# 	set now [clock seconds]
-# 	set ::record(chunkTime) $now
-# 	set ::record(startTime) $now
-# 	set ::recordState(recordTime) 0
-# 	set ::recordState(state) recording
-#     }
-# }
-
-# proc checkRecordingProcess {} {
-#     switch $::record(soundSystem) {
-# 	pulse {
-# 	    if {[catch {run exec kill -0 $::record(pid)}]} {
-# 		setErrorState [readFile $::record(file).stderr]
-# 		run file delete -- $::record(file).stderr $::record(file)
-# 		unset ::record
-# 	    }
-# 	}
-# 	fake {}
-#     }
-#}
-
 proc stopRecord {} {
-    if {$::recordState(state) ne "recording"} return
-    set ::recordState(state) stopping
-    if {$::intent(mode) eq "manual"} {set ::intent(mode) auto}
     if {[info exists ::record(pipe)]} {
+	# Если запись идет фактически, на формальное состояние не смотрим
+	set ::recordState(state) stopping
+	unset -nocomplain ::recordState(error)
 	if {[catch {
 	    set pids [pid $::record(pipe)]
 	    if {[llength $pids] > 0} {run! exec kill -INT {*}$pids}
@@ -368,22 +298,11 @@ proc stopRecord {} {
 	    debugStackTrace $dbg
 	    safelog {error "Stopping recording: $err"}
 	}
-    } else {
-	set ::recordState(state) restart
+    } elseif {$::recordState(state) in {recording silence}} {
 	safelog {error "Stopping recording: process pipe doesn't exist"}
+	set ::recordState(state) restart
     }
 }
-
-# proc startNextChunk {} {
-#     doStopRecord
-#     set now [clock seconds]
-#     set ::record(file) [genRecordFileName $now]
-#     if {[catch doStartChunk errMsg]} {
-# 	setErrorState $errMsg
-#     } else {
-# 	set ::record(chunkTime) $now
-#     }
-# }
 
 proc checkVar {var val} {
     upvar $var v
@@ -429,24 +348,6 @@ proc markStartRecord {} {
     set ::recordState(state) recording
 }
 
-# proc updateArray {arr allowNames pairList} {
-#     upvar $arr a
-#     foreach {name value} $pairList {
-# 	if {[lsearch -exact $allowNames $name] >= 0} {
-# 	    set a($name) $value
-# 	}
-#     }
-# }
-
-# proc updateDict {dict allowKeys pairList} {
-#     upvar $dict d
-#     foreach {key value} $pairList {
-# 	if {[lsearch -exact $allowKeys $key] >= 0} {
-# 	    dict set d $key $value
-# 	}
-#     }
-# }
-
 set ::autoModeChecks [dict create \
 			  silence {
 			      {aboveDuration "время звука в начале" {^\d+(\.\d*+)?$}}
@@ -466,7 +367,7 @@ proc checkAutoParams {dct} {
 }
 
 proc readConfig {file} {
-    set defaultConfig [dict create recorderPort 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460 auto [dict create autoMode silence aboveDuration 0.5 aboveLevel 5% belowDuration 10.0 belowLevel 10%]]
+    set defaultConfig [dict create recorderPort 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460 auto [dict create autoMode silence aboveDuration 0.5 aboveLevel 0.1% belowDuration 10.0 belowLevel 2%]]
     set readConfig [::yaml::yaml2dict -file $file]
     set config [dict merge $defaultConfig $readConfig]
     set errors [checkDict $config {
@@ -507,8 +408,9 @@ proc main {} {
 	exit 2
     }
     set ::maxRecordTime 1800
+    set ::mode forbid
     array set ::intent [list \
-			    mode auto \
+			    mode forbid \
 			    maxTime $::maxRecordTime \
 			    {*}[dict filter $::config key siteId auto]]
     checkRecordStateLoop
