@@ -4,6 +4,8 @@ set libtcldir [file join [file dirname [file normalize [info script]]] libtcl]
 source [file join $libtcldir common.tcl]
 package require yaml
 
+set ::notTaken —
+
 proc main {} {
     getOptions [configFile record_manager.yaml] {}
     try {
@@ -108,7 +110,7 @@ proc disconnectedFromRecorder {peer} {
     foreach {headset p} [array get ::availableHeadsets] {
 	if {$p eq $peer} {
 	    unset -nocomplain ::headsetState($headset)
-	    updateButtonForHeadset $headset
+	    updateWidgetsForHeadset $headset
 	    break
 	}
     }
@@ -163,7 +165,7 @@ proc handleReply {chan} {
 	    unset ::availableHeadsets($headset)
 	}
 	set ::headsetState($headset) [array get state]
-	updateButtonForHeadset $headset
+	updateWidgetsForHeadset $headset
     }
 }
 
@@ -225,7 +227,8 @@ proc createMainFrame {} {
     grid anchor $::mainWindow center
     set mainFrame [frame $::mainWindow.mainFrame]
     grid $mainFrame
-    createEmployeesTable $mainFrame
+    set ::employeeFrame $mainFrame
+    createEmployeesTable $::employeeFrame
     grid [button $::mainWindow.exit -command exit -text {Завершить работу}]
 }
 
@@ -242,15 +245,16 @@ proc takeHeadset {employeeId headset} {
     if {[info exists ::availableHeadsets($headset)]} {
 	set ::headsetsInUse(e_$employeeId) $headset
 	set ::headsetsInUse(h_$headset) $employeeId
-	updateButtonForHeadset $headset
+	updateWidgetsForEmployee $employeeId $headset
+	startRecordOnHeadset $headset {} auto
 	return true
     } else {
 	return false
     }
 }
 
-proc startRecordOnHeadset {headset button} {
-    $button configure -state disabled -command {}
+proc startRecordOnHeadset {headset button mode} {
+    if {$button ne ""} {$button configure -state disabled -command {}}
     if {![setIfExists ::availableHeadsets($headset) peer]} return
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
     if {![setIfExists ::headsetsInUse(h_$headset) employeeId]} return
@@ -259,7 +263,7 @@ proc startRecordOnHeadset {headset button} {
 	    set request [list [nextCommandId] start \
 			     siteId [dict get $::config siteId] \
 			     employeeId $id name $name \
-			     time 180]
+			     mode $mode]
 	    if {[sendRequest $chan $request]} {
 		#debug "Sent request to $chan: $request"
 	    }
@@ -269,10 +273,20 @@ proc startRecordOnHeadset {headset button} {
 }
 
 proc stopRecordOnHeadset {headset button} {
-    $button configure -state disabled -command {}
+    if {$button ne ""} {$button configure -state disabled -command {}}
     if {![setIfExists ::availableHeadsets($headset) peer]} return
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
     set request [list [nextCommandId] stop]
+    if {[sendRequest $chan $request]} {
+	#debug "Sent request to $chan: $request"
+    }
+}
+
+proc forbidRecordOnHeadset {headset button} {
+    if {$button ne ""} {$button configure -state disabled -command {}}
+    if {![setIfExists ::availableHeadsets($headset) peer]} return
+    if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
+    set request [list [nextCommandId] start mode forbid]
     if {[sendRequest $chan $request]} {
 	#debug "Sent request to $chan: $request"
     }
@@ -289,57 +303,111 @@ proc formatRecordTime {time} {
     }
 }
 
-proc updateButtonForHeadset {headset} {
-    if {![info exists ::headsetsInUse(h_$headset)]} return
-    set employeeId $::headsetsInUse(h_$headset)
-    if {![info exists ::recordButton($employeeId)]} return
-    set button $::recordButton($employeeId)
-    if {[info exists ::headsetState($headset)]} {
-	#debug $::headsetState($headset)
-	array set st $::headsetState($headset)
-	if {[info exists st(state)]} {set state $st(state)} {set state error}
+proc updateWidgetsForEmployee {employeeId headset} {
+    if {![dict exists $::employeeControls $employeeId]} return
+    dict with ::employeeControls $employeeId {
+	set state noHeadset
+	set mode auto
+	set time 0
+	safelog {debug [list headset $headset state [array get ::headsetState]]} 
+	if {[info exists ::headsetState($headset)]} {
+	    # Если есть состояние станции с этой гарнитурой, то данные из него
+	    array set st $::headsetState($headset)
+	    safelog {debug [list st [array get st]]}
+	    if {[info exists st(state)]} {set state $st(state)} {set state error}
+	    if {[info exists st(mode)]} {set mode $st(mode)}
+	    if {[info exists st(recordTime)]} {set time $st(recordTime)}
+	} else {
+	    safelog {debug [list NO $headset IN [array get ::headsetState]]}
+	    # Если состояния станции с этой гарнитурой нет, а гарнитура есть, это другая проблема
+	    if {$headset ne ""} {set state headsetAbsent}
+	}
+	# Состояние кнопки запрещения для всех состояний, когда гарнитура
+	# есть (их большинство), зависит от mode. Для остальных перекроем.
+	if {$mode eq "forbid"} {
+	    $forbidButton configure -background {light green} -state normal -text "Разрешить" -command [list startRecordOnHeadset $headset $forbidButton auto]
+	} else {
+	    $forbidButton configure -background yellow -state normal -text "Запретить" -command [list forbidRecordOnHeadset $headset $forbidButton]
+	}
 	switch $state {
+	    noHeadset {
+		$stateLabel configure -text "Гарнитура не взята"
+		$recordButton configure -background gray85 -state disabled -text "" -command {}
+		$forbidButton configure -background gray85 -state disabled -text "" -command {}
+	    }
+	    headsetAbsent {
+		$stateLabel configure -text "Гарнитура не подключена"
+		$recordButton configure -background gray85 -state disabled -text "" -command {}
+		$forbidButton configure -background gray85 -state disabled -text "" -command {}
+	    }
+	    restart {
+		$stateLabel configure -text "Подготовка"
+		$recordButton configure -background gray85 -state disabled -text "Ждем..." - command {}
+	    }
 	    ready {
-		$button configure -background {light green} -state normal -text "Начать запись" -command [list startRecordOnHeadset $headset $button]
+		$stateLabel configure -text "Готовность"
+		$recordButton configure -background {light green} -state normal -text "Запустить" -command [list startRecordOnHeadset $headset $recordButton manual]
 	    }
 	    noDevice {
-		$button configure -background red -state disabled -text "Нет управления" -command {}
+		$stateLabel configure -text "Гарнитура не подключена"
+		$recordButton configure -background red -state disabled -text "" -command {}
+	    }
+	    silence {
+		$stateLabel configure -text "Тишина"
+		$recordButton configure -background {light green} -state normal -text "Запустить" -command [list startRecordOnHeadset $headset $recordButton manual]
 	    }
 	    recording {
-		if {![setIfExists st(recordTime) time]} {set time 0}
-		$button configure -background yellow -state normal -text "[formatRecordTime $time] Остановить" -command [list stopRecordOnHeadset $headset $button]
+		$stateLabel configure -text "Запись [formatRecordTime $time]"
+		$recordButton configure -background yellow -state normal -text "Отрезать" -command [list stopRecordOnHeadset $headset $recordButton]
+	    }
+	    stopping {
+		$stateLabel configure -text "Остановка..."
+		$recordButton configure -background gray85 -state disabled -text "Ждем..." -command {}
+	    }
+	    error {
+		$stateLabel configure -text "Ошибка"
+		$recordButton configure -background red -state normal -text "Сбросить" -command [list clearErrorOnHeadset $headset $recordButton]
 	    }
 	    default {
-		$button configure -background red -state disabled -text "Ошибка" -command {}
+		# В том числе error
+		$stateLabel configure -text "Ошибка"
+		$recordButton configure -background red -state disabled -text "" -command {}
 	    }
 	}
-    } else {
-	$button configure -background gray85 -state disabled -text "Нет управления" -command {}
+	if {$mode eq "forbid"} {
+	    # mode forbid возможно только если станция есть и гарнитуру видит,
+	    # поэтому тут не смотрим на то, есть ли гарнитура
+	    $recordButton configure -background red -state disabled -text "Запрещена" -command {}
+	}
     }
+}
+	    
+proc updateWidgetsForHeadset {headset} {
+    if {![info exists ::headsetsInUse(h_$headset)]} return
+    set employeeId $::headsetsInUse(h_$headset)
+    updateWidgetsForEmployee $employeeId $headset
 }
 
 proc leaveHeadset {employeeId} {
     if {[info exists ::headsetsInUse(e_$employeeId)]} {
 	set hs $::headsetsInUse(e_$employeeId)
+	forbidRecordOnHeadset $hs {}
 	unset -nocomplain ::headsetsInUse(h_$hs) ::headsetsInUse(e_$employeeId)
-	if {[info exists ::recordButton($employeeId)]} {
-	    $::recordButton($employeeId) configure -background gray85 -state disabled -command {} -text "Нет гарнитуры"
-	}
+	updateWidgetsForEmployee $employeeId {}
     }
 }
 
 proc createEmployeesTable container {
     proc setAvailableHeadsets {combobox} {
-	$combobox configure -values [concat — [freeHeadsets]]
+	$combobox configure -values [concat $::notTaken [freeHeadsets]]
     }
     proc selectHeadsetFor {employeeId selector} {
 	set headset [$selector get]
 	if {![takeHeadset $employeeId $headset]} {
-	    $selector set —
+	    $selector set $::notTaken
 	}
     }
-    array set ::headsetSelector {}
-    array set ::recordButton {}
+    set ::employeeControls [dict create]
     set hName [label $container.hName -font $::defaultBoldFont -text Имя]
     set hHeadset [label $container.hHeadset -font $::defaultBoldFont -text Гарнитура]
     set hRecord [label $container.hRecord -font $::defaultBoldFont -text Запись]
@@ -348,17 +416,20 @@ proc createEmployeesTable container {
     foreach name [lsort -dictionary [array names ::employee]] {
 	set id $::employee($name)
 	set nameLabel [label $container.nm$id -text $name]
-	set headsetSelector [ttk::combobox $container.hs$id -justify center -state readonly -width 2 -values —]
+	set headsetSelector [ttk::combobox $container.hs$id -justify center -state readonly -width 3 -values $::notTaken]
 	$headsetSelector configure -postcommand [list setAvailableHeadsets $headsetSelector]
-	$headsetSelector set —
+	$headsetSelector set $::notTaken
 	bind $headsetSelector <<ComboboxSelected>> [list selectHeadsetFor $id $headsetSelector]
-	set ::headsetSelector($id) $headsetSelector
-	set recordButton [button $container.rb$id -state disabled -text "Нет гарнитуры" -width 15]
-	set ::recordButton($id) $recordButton
-	grid configure $nameLabel $headsetSelector $recordButton
+	set stateLabel [label $container.st$id -text "Гарнитура не взята" -width 24 -justify right] 
+	set recordButton [button $container.rb$id -state disabled -text "" -width 15]
+	set forbidButton [button $container.fb$id -state normal -text "" -width 10]
+	grid configure $nameLabel $headsetSelector $stateLabel $recordButton $forbidButton
 	grid configure $nameLabel -sticky w
 	grid configure $headsetSelector -sticky we
+	grid configure $stateLabel -sticky e
 	grid configure $recordButton -sticky we
+	grid configure $forbidButton -sticky we
+	dict set ::employeeControls $id [dict create nameLabel $nameLabel headsetSelector $headsetSelector stateLabel $stateLabel recordButton $recordButton forbidButton $forbidButton]
     }
     grid columnconfigure $container all -pad 8
     grid rowconfigure $container all -pad 8
