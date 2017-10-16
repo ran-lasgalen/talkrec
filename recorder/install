@@ -78,7 +78,7 @@ proc doInstall {} {
 	lappend needDebs sox pulseaudio pulseaudio-utils
     } else {
 	switch $soundSystem {
-	    pulse {lappend needDebs pulseaudio pulseaudio-utils}
+	    pulse {lappend needDebs sox pulseaudio pulseaudio-utils}
 	}
     }
     installDebs $needDebs
