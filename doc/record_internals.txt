@@ -7,13 +7,14 @@
     - auto
     - manual
     - forbid
+    - end
   - auto {autoMode silence aboveDuration $aboveDuration aboveLevel $aboveLevel belowDuration $belowDuration belowLevel $belowLevel} optional
   - employeeId
   - name
   - siteId
   - maxTime optional default 1800
 
-Стартовый intent mode auto, с заполненным auto, но без всего остального.
+Стартовый intent mode forbid, с заполненным auto, но без всего остального.
 
 ::recordState()
   - state
@@ -52,7 +53,7 @@ state запрашивает состояние. Возвращаем весь i
 
 clearError запрашивает сброс состояния error. -> restart, checkState, отправляем состояние
 
-## checkStateLoop = {checkState; aftel 500 checkStateLoop}
+## checkStateLoop = {checkState; after 500 checkStateLoop}
 
 ## checkState
 
