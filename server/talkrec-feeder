@@ -57,7 +57,7 @@ proc feedFile {soundFile} {
 	}
 	close $yh
 	lappend lines "recordTime: $duration"
-	createFileViaTmp $soundFile.yaml [join lines "\n"]
+	createFileViaTmp $soundFile.yaml [join $lines "\n"]
     } err dbg]} {
 	debugStackTrace $dbg
     }
