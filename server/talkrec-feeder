@@ -48,6 +48,19 @@ proc feedFile {soundFile} {
     run close $pipe
     run file rename -force -- $soundFile.tmp $soundFile.text
     finishedWith $soundFile.flag
+    if {[catch {
+	set duration [wavDuration $soundFile]
+	set yh [open $soundFile.yaml r]
+	set lines {}
+	while {[gets $yh line] >= 0} {
+	    if {![regexp {^recordTime\s*:} $line]} {lappend lines $line}
+	}
+	close $yh
+	lappend lines "recordTime: $duration"
+	createFileViaTmp $soundFile.yaml [join lines "\n"]
+    } err dbg]} {
+	debugStackTrace $dbg
+    }
     catch {run file delete -- $soundFile}
     ::log::log info "$soundFile -> $soundFile.text"
 }
