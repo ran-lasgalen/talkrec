@@ -1,0 +1,92 @@
+# recorder
+
+## state globals
+
+::intent()
+  - mode
+    - auto
+    - manual
+    - forbid
+    - end
+  - auto {autoMode silence aboveDuration $aboveDuration aboveLevel $aboveLevel belowDuration $belowDuration belowLevel $belowLevel} optional
+  - employeeId
+  - name
+  - siteId
+  - maxTime optional default 1800
+
+Стартовый intent mode forbid, с заполненным auto, но без всего остального.
+
+::recordState()
+  - state
+    - restart
+    - ready
+    - noDevice
+    - error
+    - silence
+    - recording
+    - stopping
+  - recordTime время записи, с, поддерживается при recording, сбрасывается после завершения
+  - error ошибка состояния
+
+::record()
+  - pipe
+  - file
+  - soundSystem
+  - device
+  - startTime, время начала записи, с, ставится при переходе в recording, сбрасывается после завершения
+
+::config{}
+  - above_duration
+  - above_level
+  - below_duration
+  - below_level
+  - workdir
+  - headset
+
+## команды
+
+start <intent> переписывает весь intent. Для mode forbid остального можно не указывать, для auto и manual обязательно всё, что не optional. Проверяем необходимые данные, если что, возвращаем errors. Если sox работал, запускаем его остановку со *старым* ::intent (она потом запустит doIntended) и отправляем состояние, иначе сразу doIntended и отправляем состояние
+
+stop остановить запись. Если запись не ведется (не recording), nop, иначе intent mode manual меняется на auto и запускается остановка sox со старым intent. Отправляем состояние.
+
+state запрашивает состояние. Возвращаем весь intent, весь recordState, config{headset}
+
+clearError запрашивает сброс состояния error. -> restart, checkState, отправляем состояние
+
+## checkStateLoop = {checkState; after 500 checkStateLoop}
+
+## checkState
+
+restart, ready, noDevice - если нет девайса, -> noDevice, иначе -> ready, doIntended
+
+error - nop
+
+silence - если размер файла < 100, оставляем. Иначе markStartRecord
+
+recording - обновляем time. Если >= maxTime, stopRecord
+
+stopping - nop
+
+## markStartRecord
+
+startTime в текущее, recordTime в 0, state в recording
+
+## stopRecord
+
+-> stopping. Если есть pipe, то kill -INT его pid, иначе -> ready, doIntended
+
+## doIntended
+
+Если не ready или mode forbid, nop.
+
+Иначе запускаем sox соответственно intent. В случае auto -> silence, в случае manual markStartRecord
+
+## watchSox
+
+если есть, что прочесть, вычитываем.
+
+по eof:
+если файл меньше ???, удаляем. Иначе переименовываем, пишем мету, -> restart
+
+# record_manager
+

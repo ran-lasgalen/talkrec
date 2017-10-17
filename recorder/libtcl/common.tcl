@@ -70,6 +70,12 @@ proc run {args} {
     }
 }
 
+proc run! {args} {
+    if {$::dryRun} {set lvl info} {set lvl debug}
+    ::log::log $lvl $args
+    {*}$args
+}
+
 proc runExec {args} {run exec {*}$args >@ stdout 2>@ stderr}
 
 proc findExecutable {bin} {
@@ -171,4 +177,48 @@ proc formatTimeInterval {seconds} {
     } else {
 	format "%d:%02d" $m $s
     }
+
+proc wavDuration {file} {
+    proc parseFmtChunk {chan scanFmts} {
+	array set scanFmt $scanFmts
+	binary scan [read $chan 16] $scanFmt(fmt) \
+	    fmt channels freq bytesPerSec bytesPerSample bitsPerSample
+	set res [list fmt $fmt channels $channels bytesPerSec $bytesPerSec bytesPerSample $bytesPerSample bitsPerSample $bitsPerSample]
+	if {$fmt != 1} {	# extra header
+	    binary scan [read $chan 2] $scanFmt(16) extra
+	    lappend res extra $extra
+	}
+	return $res
+    }
+    set wav [open $file r]
+    fconfigure $wav -translation binary
+    set magic [read $wav 4]
+    switch $magic {
+	RIFF {set scanFmts {16 s 32 i fmt "ssiiss"}}
+	RIFX {set scanFmts {16 S 32 I fmt "SSIISS"}}
+	default {error "Bad magic '$magic'"}
+    }
+    array set scanFmt $scanFmts
+    # len should be file length - 8, but we just ignore it
+    binary scan [read $wav 4] $scanFmt(32) len
+    set type [read $wav 4]
+    if {$type ne "WAVE"} {error "Not a WAVE file: '$type'"}
+    set dataLen 0
+    set format {}
+    while {1} {
+	set chunkType [read $wav 4]
+	if {[eof $wav]} break
+	binary scan [read $wav 4] $scanFmt(32) len; # chunk length
+	set eoc [expr {[tell $wav] + $len}];	    # end of chunk
+	switch [string tolower [string trim $chunkType]] {
+	    fmt {set format [parseFmtChunk $wav $scanFmts]}
+	    data {incr dataLen $len}
+	}
+	seek $wav $eoc start
+    }
+    array set fmt $format
+    if {![info exists fmt(bytesPerSec)]} {
+	error "No format chunk or bytesPerSec data in it"
+    }
+    expr {double($dataLen) / $fmt(bytesPerSec)}
 }

@@ -39,35 +39,10 @@ proc getCommand {chan} {
     }
 }
 
-proc checkNames {arr names} {
-    upvar $arr a
-    set errors {}
-    foreach name $names {
-	if {![info exists a($name)]} {lappend errors need:$name}
-    }
-    return $errors
+proc tellState {chan replyId} {
+    set dct [dict merge [array get ::recordState] [array get ::intent] [list mode $::mode] [dict filter $::config key headset]]
+    puts $chan [concat $replyId $dct]
 }
-
-proc checkKeys {dict keys} {
-    set errors {}
-    foreach key $keys {
-	if {![dict exists $dict $key]} {lappend errors need:$key}
-    }
-    return $errors
-}
-
-proc checkRE {var name re} {
-    upvar $var v
-    if {![info exists v]} {
-	return [list need:$name]
-    } elseif {[regexp "^$re\$" $v]} {
-	return {}
-    } else {
-	return [list "re:$name!$re"]
-    }
-}
-
-proc tellState {chan replyId} {puts $chan [concat $replyId [array get ::recordState] [dict filter $::config key siteId headset]]}
 
 proc tellErrors {chan replyId errors} {puts $chan [list $replyId errors $errors]}
 
@@ -84,46 +59,55 @@ proc serveCmd {chan} {
 	    {^internals$} {puts $chan [list $replyId ::record [array get ::record] ::config $::config]}
 	    {^\s*clearError\s*$} {
 		if {$::recordState(state) eq "error"} {
-		    set ::recordState(state) noDevice
-		    unset ::recordState(errorMessage)
-		    if {[catch getJabraDev msg]} {setErrorState $msg}
+		    set ::recordState(state) restart
+		    unset -nocomplain ::recordState(errorMessage)
+		    checkRecordState
 		    tellState $chan $replyId
 		}
 	    }
 	    {^\s*stop\s*$} {
 		stopRecord
+		checkRecordState
+		tellState $chan $replyId
+	    }
+	    {^\s*end\s*$} {
+		array set ::intent {mode end}
+		stopRecord
+		checkRecordState
 		tellState $chan $replyId
 	    }
 	    {^\s*start\s+(\S.*)} {
-		set errors {}
-		if {$::recordState(state) == "ready"} {
-		    # запуск записи возможен только из состояния "готов"
-		    set params [dict merge \
-				    [dict filter $::config key siteId] \
-				    [lindex $matches 1]]
-		    if {![dict exists $params time]} {
-			set recordTimeLimit 0
+		if {[catch {dict merge \
+				[dict filter $::config key siteId auto] \
+				[dict create maxTime $::maxRecordTime] \
+				[lindex $matches 1]} params dbg]} {
+		    debugStackTrace $dbg
+		    tellErrors $chan $replyId [list $params]
+		} else {
+		    if {![catch {dict get $params mode} mode] && $mode in {forbid end}} {
+			set errors {}
 		    } else {
-			set recordTimeLimit [dict get $params time]
+			set errors [checkDict $params {
+			    {mode "режим записи: auto, manual, forbid или end" {^(auto|manual|forbid|en)$}}
+			    {employeeId "идентификатор сотрудника" {^\d+$}}
+			    {siteId "идентификатор салона" {^\d+$}}
+			    {maxTime "максимальное время записи" {^\d+$}}
+			}]
 		    }
-		    if {$recordTimeLimit <= 0} {set recordTimeLimit 600}
-		    set state [dict filter $params key name employeeId siteId]
-		    set errors [checkDict $state {
-			{name {имя сотрудника} .}
-			{employeeId {идентификатор сотрудника из базы} {^\w+$}}
-			{siteId {идентификатор салона из базы} {^\w+$}}
-		    }]
+		    if {$mode ni {forbid end} && [catch {checkAutoParams $params} err]} {lappend $errors $err}
 		    if {[llength $errors] > 0} {
 			tellErrors $chan $replyId $errors
 		    } else {
-			array set ::recordState $state
-			set ::record(length) $recordTimeLimit
-			startRecord
+			set maxTime [dict get $params maxTime]
+			if {$maxTime <= 0 || $maxTime > $::maxRecordTime} {
+			    dict set params maxTime $::maxRecordTime
+			}
+			array set ::intent $params
+			stopRecord
+			checkRecordState
 			tellState $chan $replyId
 		    }
-		} else {
-		    tellErrors $chan $replyId [list "Не могу начать запись из состояния $::recordState(state)"]
-	        }
+		}
 	    }
 	    default {
 		tellErrors $chan $replyId [list "Неизвестная команда: $cmd"]
@@ -135,14 +119,18 @@ proc serveCmd {chan} {
     }
 }
 
+# На выходе ::record(soundSystem) из конфига
+# и либо ::record(device), либо error noDevice, либо текстуальная ошиюка
+# setErrorState по noDevice выставляет состояние noDevice, а не error
 proc getJabraDev {} {
     set ::record(soundSystem) [dict get $::config soundSystem]
+    set deviceRE [dict get $::config deviceRE]
     unset -nocomplain ::record(device)
     switch $::record(soundSystem) {
 	pulse {
 	    set pipe [open "| pactl list short sources"]
 	    while {![eof $pipe]} {
-		if {[regexp {^\d+\s+(\S+)} [gets $pipe] dummy dev] && [regexp [dict get $::config deviceRE] $dev]} {
+		if {[regexp {^\d+\s+(\S+)} [gets $pipe] - dev] && [regexp $deviceRE $dev]} {
 		    close $pipe
 		    set ::record(device) $dev
 		    return
@@ -151,60 +139,106 @@ proc getJabraDev {} {
 	    close $pipe
 	    error noDevice
 	}
-	fake {set ::record(device) [dict get $::config fakeRecord]}
-	default {error "Unsupported sound system $::record(soundSystem)"}
-    }
-}
-
-# sox -r 16000 -b 16 -c 1 -t s16 "|parec --rate=16000 --channels=1 --device=alsa_input.pci-0000_00_1b.0.analog-stereo" test.wav trim 0 3
-proc doStartChunk {} {
-    switch $::record(soundSystem) {
-	pulse {
-	    set ::record(pid) [run exec parecord --rate=16000 --channels=1 --device=$::record(device) $::record(file) 2> $::record(file).stderr &]
+	fake {
+	    # Наличие файла мы здесь не проверяем — пригодится потом для теста
+	    # ошибки записи
+	    set ::record(device) [dict get $::config fakeRecord]
 	}
-	fake {}
 	default {error "Unsupported sound system $::record(soundSystem)"}
     }
-    ::log::log info "Started record to $::record(file)"
 }
 
+# На выходе, если не ошибка, обязательно валидный пайп в ::record(pipe)
 proc doStartRecord {} {
-    # TODO make pre-record settings according to soundSystem
-    doStartChunk
-}
-
-proc doStopRecord {} {
+    file delete -- $::record(file) $::record(file).stderr
     switch $::record(soundSystem) {
 	pulse {
-	    catch {run exec kill $::record(pid)}
-	    if {[file exists $::record(file).stderr] && [file size $::record(file).stderr] == 0} {
-		file delete $::record(file).stderr
+	    set params [list trim 0 $::intent(maxTime)]
+	    if {$::intent(mode) eq "auto"} {
+		array set param $::intent(auto)
+		switch $param(autoMode) {
+		    silence {
+			set params [list silence 1 $param(aboveDuration) $param(aboveLevel) 1 $param(belowDuration) $param(belowLevel)]
+		    }
+		}
+	    }
+	    set pipeCmd [list | sox -r 16000 -b 16 -c 1 -t s16 "|parec --rate=16000 --channels=1 --device=$::record(device)" $::record(file) {*}$params 2> $::record(file).stderr]
+	    #set ::record(pid) [run exec parecord --rate=16000 --channels=1 --device=$::record(device) $::record(file) 2> $::record(file).stderr &]
+	    set ::record(pipe) [run open $pipeCmd r]
+	    if {$::dryRun} {
+		set ::record(pipe) [open sleep $::intent(maxTime)]
 	    }
 	}
 	fake {
-	    if {[catch {file copy -- $::record(device) $::record(file)} err]} {catch {
-		set fh [open $::record(file).stderr w]
+	    if {![regexp {after(\d+)} $::record(device) - delay]} {set delay 6}
+	    after [expr {$delay * 1000}] [list run file copy -- $::record(device) $::record(file)]
+	    set ::record(pipe) [open sleep $::intent(maxTime)]
+	}
+	default {error "Unsupported sound system $::record(soundSystem)"}
+    }
+    fconfigure $::record(pipe) -blocking 0
+    fileevent $::record(pipe) readable [list watchRecorder [array get ::intent] $::record(pipe)]
+    safelog {info "Started record in $::intent(mode) mode"}
+}
+
+# Главным образом обработчик завершения
+proc watchRecorder {intentList pipe} {
+    # в stdout ничего интересного от программы не ждем
+    read $pipe
+    if {[eof $pipe]} {
+	set resultFile [file join [file normalize [dict get $::config workdir]] [genRecordFileName $intentList]]
+	if {[catch {close $pipe} err] && $::recordState(state) ne "stopping"} {
+	    # если stopping, то ошибка ожидаемая, ибо kill
+	    # а тут реальная ошибка
+	    # stderr оставляем для разборок
+	    set msg "Error while recording"
+	    if {[file exists $::record(file)] &&
+		[file size $::record(file)] > 0 &&
+		![catch {file rename -- $::record(file) $resultFile}]} {
+		append msg " to $resultFile"
+	    }
+	    catch {
+		set fh [open $::record(file).stderr a]
 		puts $fh $err
 		close $fh
-	    }}
+		file rename -- $::record(file).stderr $resultFile.stderr
+	    }
+	    if {[file exists $resultFile.stderr]} {
+		append msg "\nsee $resultFile.stderr for possible debugging help"
+	    }
+	    safelog {error $msg}
+	} else {
+	    # успешное завершение
+	    catch {run file delete -- $::record(file).stderr}
+	    if {[file exists $::record(file)] &&
+		[file size $::record(file)] > 100} {
+		try {
+		    run file rename -- $::record(file) $resultFile
+		    array set intent $intentList
+		    set autoParams [dict create]
+		    if {$intent(mode) eq "auto"} {catch {set autoParams $intent(auto)}}
+		    createFileViaTmp $resultFile.yaml \
+			[::yaml::dict2yaml \
+			     [dict merge \
+				  [dict filter $intentList key employeeId name siteId] \
+				  $autoParams]]
+		    safelog {info "Finished $resultFile"}
+		} on error {err dbg} {
+		    debugStackTrace $dbg
+		    safelog {error "Error saving information for $resultFile:\n  $err"}
+		}
+	    } else {
+		safelog {info "$::record(file) too small, ignoring"}
+	    }
 	}
-    }
-    if {[file exists $::record(file)]} {
-	try {
-	    createFileViaTmp $::record(file).yaml \
-		[::yaml::dict2yaml [dict filter [array get ::recordState] key employeeId name siteId]]
-	    ::log::log info "Finished $::record(file)"
-	} on error {err dbg} {
-	    debugStackTrace $dbg
-	    ::log::log error "Error saving meta information to $::record(file).yaml:\n  $err"
-	}
-    } else {
-	::log::log error "Error recording to $::record(file)"
+	unset -nocomplain ::record ::recordState(recordTime)
+	set ::recordState(state) restart
+	checkRecordState
     }
 }
 
 proc setErrorState {msg} {
-    unset -nocomplain ::recordState(recordTime)
+    unset -nocomplain ::recordState(recordTime) ::recordState(errorMessage)
     if {$msg eq "noDevice"} {
 	set ::recordState(state) noDevice
     } else {
@@ -213,53 +247,60 @@ proc setErrorState {msg} {
     }
 }
 
-proc genRecordFileName {now} {
-    set t [clock format $now -format "%Y%m%d_%H%M%S"]
-    return [format "%s_%s_%d_%s.wav" $t $::recordState(siteId) [dict get $::config headset] $::record(id)]
-}
-
-proc startRecord {} {
-    set now [clock seconds]
-    set ::record(id) [format "%08x" $now]
-    set ::record(file) [genRecordFileName $now]
-    if {[catch doStartRecord errMsg]} {
-	setErrorState $errMsg
+proc genRecordFileName {intentList} {
+    array set intent $intentList
+    if {[info exists ::record(startTime)]} {
+	set startTime $::record(startTime)
     } else {
-	set now [clock seconds]
-	set ::record(chunkTime) $now
-	set ::record(startTime) $now
-	set ::recordState(recordTime) 0
-	set ::recordState(state) recording
+	set startTime [clock seconds]
     }
+    set t [clock format $startTime -format "%Y%m%d_%H%M%S"]
+    format "%s_%s_%d_%d.wav" $t $::intent(siteId) [dict get $::config headset] $startTime
 }
 
-proc checkRecordingProcess {} {
-    switch $::record(soundSystem) {
-	pulse {
-	    if {[catch {run exec kill -0 $::record(pid)}]} {
-		setErrorState [readFile $::record(file).stderr]
-		run file delete -- $::record(file).stderr $::record(file)
-		unset ::record
+proc doIntended {} {
+    set ::mode $::intent(mode)
+    if {$::intent(mode) eq "end"} {
+	safelog {notice "Exit requested"}
+	exit
+    }
+    if {$::recordState(state) ne "ready" ||
+	$::intent(mode) eq "forbid"} return
+    set ::record(file) [file join [file normalize [dict get $::config workdir]] current.wav]
+    if {[catch doStartRecord err]} {
+	setErrorState $err
+    } else {
+	switch $::intent(mode) {
+	    auto {set ::recordState(state) silence}
+	    manual {
+		markStartRecord
+		set ::intent(mode) auto
+	    }
+	    default {
+		# should not be here
+		safelog {error "recording started in unsupported mode '$::intent(mode)', interpreted as manual"}
+		markStartRecord
 	    }
 	}
-	fake {}
     }
 }
 
 proc stopRecord {} {
-    doStopRecord
-    unset ::recordState(recordTime)
-    if {[catch getJabraDev msg]} {setErrorState $msg} else {set ::recordState(state) ready}
-}
-
-proc startNextChunk {} {
-    doStopRecord
-    set now [clock seconds]
-    set ::record(file) [genRecordFileName $now]
-    if {[catch doStartChunk errMsg]} {
-	setErrorState $errMsg
-    } else {
-	set ::record(chunkTime) $now
+    if {[info exists ::record(pipe)]} {
+	# Если запись идет фактически, на формальное состояние не смотрим
+	set ::recordState(state) stopping
+	unset -nocomplain ::recordState(error)
+	if {[catch {
+	    set pids [pid $::record(pipe)]
+	    if {[llength $pids] > 0} {run! exec kill -INT {*}$pids}
+	} err dbg]} {
+	    set ::recordState(state) restart
+	    debugStackTrace $dbg
+	    safelog {error "Stopping recording: $err"}
+	}
+    } elseif {$::recordState(state) in {recording silence}} {
+	safelog {error "Stopping recording: process pipe doesn't exist"}
+	set ::recordState(state) restart
     }
 }
 
@@ -268,67 +309,76 @@ proc checkVar {var val} {
     if {![info exists v]} {set v $val}
 }
 
+proc checkRecordStateLoop {} {
+    checkRecordState
+    after 500 checkRecordStateLoop
+}
+
 proc checkRecordState {} {
-    if {![info exists ::recordState(state)]} {set ::recordState(state) noDevice}
+    if {![info exists ::recordState(state)]} {set ::recordState(state) restart}
     switch $::recordState(state) {
+	restart -
+	ready -
 	noDevice {
 	    if {[catch getJabraDev msg]} {
 		setErrorState $msg
 	    } else {
 		set ::recordState(state) ready
+		doIntended
 	    }
 	}
-	ready {
-	    if {[catch getJabraDev msg]} {setErrorState $msg}
+	silence {
+	    if {[info exists ::record(file)] &&
+		[file exists $::record(file)] &&
+		[file size $::record(file)] > 100} markStartRecord
 	}
 	recording {
 	    set now [clock seconds]
-	    checkVar ::record(startTime) $now 
-	    checkVar ::record(chunkTime) $now
+	    checkVar ::record(startTime) $now
+	    checkVar ::intent(maxTime) $::maxRecordTime
 	    set ::recordState(recordTime) [expr $now - $::record(startTime)]
-	    if {$::recordState(recordTime) >= $::record(length)} {
-		stopRecord
-	    } elseif {$now - $::record(chunkTime) >= $::recordChunkLength} {
-		startNextChunk
-	    } else {
-		checkRecordingProcess
-	    }
-	}
-    }
-    after 500 checkRecordState
-}
-
-proc updateArray {arr allowNames pairList} {
-    upvar $arr a
-    foreach {name value} $pairList {
-	if {[lsearch -exact $allowNames $name] >= 0} {
-	    set a($name) $value
+	    if {$::recordState(recordTime) >= $::intent(maxTime)} stopRecord
 	}
     }
 }
 
-proc updateDict {dict allowKeys pairList} {
-    upvar $dict d
-    foreach {key value} $pairList {
-	if {[lsearch -exact $allowKeys $key] >= 0} {
-	    dict set d $key $value
-	}
+proc markStartRecord {} {
+    set ::record(startTime) [clock seconds]
+    set ::recordState(recordTime) 0
+    set ::recordState(state) recording
+}
+
+set ::autoModeChecks [dict create \
+			  silence {
+			      {aboveDuration "время звука в начале" {^\d+(\.\d*+)?$}}
+			      {belowDuration "время тишины в конце" {^\d+(\.\d*+)?$}}
+			      {aboveLevel "нижний порог звука" {^\d+(\.\d*+)?[d%]$}}
+			      {belowLevel "верхний порог тишины" {^\d+(\.\d*+)?[d%]$}}
+			  }]
+
+proc checkAutoParams {dct} {
+    if {[catch {dict get $dct auto} auto]} {error "отсутствует блок параметров автоматического режима (ключ auto)"}
+    if {[catch {dict get $auto autoMode} mode]} {error "в блоке параметров (ключ auto) отсутствует автоматический режим (ключ autoMode)"}
+    if {[catch {dict get $::autoModeChecks $mode} checks]} {error "неизвестный автоматический режим $mode"}
+    set errors [checkDict $auto $checks]
+    if {[llength $errors]} {
+	error [listOfErrors "в блоке параметров (ключ auto):" $errors]
     }
 }
 
 proc readConfig {file} {
-    set defaultConfig [dict create recorderPort 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460]
+    set defaultConfig [dict create recorderPort 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460 auto [dict create autoMode silence aboveDuration 0.5 aboveLevel 0.1% belowDuration 10.0 belowLevel 2%]]
     set readConfig [::yaml::yaml2dict -file $file]
     set config [dict merge $defaultConfig $readConfig]
-    set errors {}
-    if {![dict exists $config headset]} {
-	lappend errors "Не указан номер гарнитуры (ключ headset)"
-    } elseif {![regexp {^\d+$} [dict get $config headset]]} {
-	lappend errors "Номер гарнитуры (ключ headset) должен быть числом"
-    }
+    set errors [checkDict $config {
+	{headset "номер гарнитуры" {^\d+$}}
+    }]
+    if {[catch {checkAutoParams $config} err]} {lappend $errors $err}
     switch [dict get $config soundSystem] {
 	pulse {
-	    if {![dict exists $config deviceRE]} {lappend errors "Не указано регулярное выражение устройства (ключ deviceRE)"}
+	    if {![dict exists $config deviceRE]} {
+		lappend errors "Не указано регулярное выражение устройства (ключ deviceRE)"
+	    }
 	}
 	fake {
 	    if {![dict exists $config fakeRecord]} {
@@ -338,22 +388,32 @@ proc readConfig {file} {
 	    }
 	}
     }
+    foreach reKey {deviceRE} {
+	if {[catch {dict get $config $reKey} re]} continue
+	if {[catch {regexp $re ""}]} {
+	    lappend errors "'$re' (ключ $reKey) не является регулярным выражением"
+	}
+    }
     if {[llength $errors] > 0} {error [listOfErrors "Ошибки конфигурации" $errors]}
     set ::config $config
     file mkdir [dict get $::config workdir]
-    cd [dict get $::config workdir]
 }
 
 proc main {} {
     getOptions [configFile recorder.yaml] {}
-    array set ::recordState {}
+    array set ::recordState {state restart}
     if {[catch {readConfig $::opt(config)} err dbg]} {
 	debugStackTrace $dbg
 	::log::log error "Ошибка чтения конфигурации из $::opt(config):\n$err"
 	exit 2
     }
-    set ::recordChunkLength 600
-    checkRecordState
+    set ::maxRecordTime 1800
+    set ::mode forbid
+    array set ::intent [list \
+			    mode forbid \
+			    maxTime $::maxRecordTime \
+			    {*}[dict filter $::config key siteId auto]]
+    checkRecordStateLoop
     socket -server acceptConn [dict get $::config recorderPort]
     ::log::log notice "Слушаю на порту TCP [dict get $::config recorderPort]"
     vwait forever
