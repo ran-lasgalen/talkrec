@@ -366,8 +366,29 @@ proc checkAutoParams {dct} {
     }
 }
 
+proc checkWorkHours {} {
+    if {![info exists ::lastAutoForbid]} {set ::lastAutoForbid 0}
+    set now [clock seconds]
+    foreach {h m} [clock format $now -format "%H %M"] break
+    if {[catch {dict get $::config workHours} workHours]} {set workHours "10 21"}
+    foreach {startH endH} $workHours break
+    if {$h < $startH || $h >= $endH} {
+	if {$now - $::lastAutoForbid >= 3600 && $::mode ne "forbid"} {
+	    safelog {info "Off-hours, recording forbidden automatically"}
+	    array set ::intent {mode forbid}
+	    stopRecord
+	    set ::lastAutoForbid $now
+	}
+    }
+}
+
+proc checkWorkHoursLoop {} {
+    catchDbg checkWorkHours
+    after 60000 checkWorkHoursLoop
+}
+
 proc readConfig {file} {
-    set defaultConfig [dict create recorderPort 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460 auto [dict create autoMode silence aboveDuration 0.5 aboveLevel 0.1% belowDuration 10.0 belowLevel 2%]]
+    set defaultConfig [dict create recorderPort 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460 auto [dict create autoMode silence aboveDuration 0.5 aboveLevel 0.1% belowDuration 10.0 belowLevel 2%] workHours "10 21"]
     set readConfig [readDict $file]
     set config [dict merge $defaultConfig $readConfig]
     set errors [checkDict $config {
@@ -413,6 +434,7 @@ proc main {} {
 			    mode forbid \
 			    maxTime $::maxRecordTime \
 			    {*}[dict filter $::config key siteId auto]]
+    checkWorkHoursLoop
     checkRecordStateLoop
     socket -server acceptConn [dict get $::config recorderPort]
     ::log::log notice "Слушаю на порту TCP [dict get $::config recorderPort]"
