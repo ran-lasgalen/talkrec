@@ -22,7 +22,7 @@ proc rereadConfig {} {
 }
 
 proc readConfig {configFile} {
-    set conf [::yaml::yaml2dict -file $configFile]
+    set conf [readDict $configFile]
     set errors {}
     if {![dict exists $conf user]} {lappend errors "не указано имя пользователя для rsync (ключ user)"}
     if {![dict exists $conf password]} {lappend errors "не указан пароль для rsync (ключ password)"}

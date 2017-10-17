@@ -368,7 +368,7 @@ proc checkAutoParams {dct} {
 
 proc readConfig {file} {
     set defaultConfig [dict create recorderPort 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460 auto [dict create autoMode silence aboveDuration 0.5 aboveLevel 0.1% belowDuration 10.0 belowLevel 2%]]
-    set readConfig [::yaml::yaml2dict -file $file]
+    set readConfig [readDict $file]
     set config [dict merge $defaultConfig $readConfig]
     set errors [checkDict $config {
 	{headset "номер гарнитуры" {^\d+$}}

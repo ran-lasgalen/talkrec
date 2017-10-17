@@ -31,7 +31,7 @@ proc main {} {
 }
 
 proc readConfig {configFile} {
-    set conf [::yaml::yaml2dict -file $configFile]
+    set conf [readDict $configFile]
     set errors {}
     if {![dict exists $conf recorders]} {lappend errors "не указаны адреса устройств записи (recorders)"}
     if {![dict exists $conf siteId]} {lappend errors "не указан идентификатор салона (siteId)"}

@@ -26,7 +26,7 @@ proc rereadConfig {} {
 
 proc readConfig {configFile} {
     set defaultConfig [dict create queue ~/queue]
-    set readConfig [::yaml::yaml2dict -file $configFile]
+    set readConfig [readDict $configFile]
     set conf [dict merge $defaultConfig $readConfig]
     set errors {}
     if {![dict exists $conf speechkits]} {

@@ -4,7 +4,7 @@ package require Tcl 8.5
 package require yaml
 
 proc showFile {textFile} {
-    set metaFile [file rootname $textFile].yaml
+    set metaFile [dictFile [file rootname $textFile]]
     if {[regexp {(\d{4})(\d\d)(\d\d)_(\d\d)(\d\d)(\d\d)_(\d+)_(\w+)} $textFile - y m d H M S siteId employeeId]} {
 	set datetime "запись, начатая $H:$M:$S $d.$m.$y"
 	set site ", салон №$siteId"
@@ -18,7 +18,7 @@ proc showFile {textFile} {
     }
     set talks ""
     catch {
-	set meta [::yaml::yaml2dict -file $metaFile]
+	set meta [readDict $metaFile]
 	if {[dict exists $meta name]} {
 	    set talks ", говорит [dict get $meta name]"
 	}

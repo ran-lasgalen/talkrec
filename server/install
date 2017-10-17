@@ -28,7 +28,7 @@ proc main {} {
 	    set ::runStyle systemd
 	    set ::installStyle working
 	}
-	set ::config [dict merge $filler [::yaml::yaml2dict -file $configFile]]
+	set ::config [dict merge $filler [readDict $configFile]]
 	if {$::installStyle eq "demo"} {
 	    dict set ::config speechkits [inputDict "Введите данные о серверах распознавания" "Адрес сервера (хост:порт)" "Количество одновременных соединений с этим сервером"]
 	}
