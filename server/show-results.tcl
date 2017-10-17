@@ -3,11 +3,17 @@
 set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
 source [file join $libtcldir common.tcl]
 
+set ::sites [dict create]
+
 proc showFile {textFile} {
     set metaFile [dictFile [file rootname $textFile]]
     if {[regexp {(\d{4})(\d\d)(\d\d)_(\d\d)(\d\d)(\d\d)_(\d+)_(\w+)} $textFile - y m d H M S siteId employeeId]} {
 	set datetime "запись, начатая $H:$M:$S $d.$m.$y"
-	set site ", салон №$siteId"
+	if {[dict exists $::sites $siteId]} {
+	    set site ", [dict get $::sites $siteId]"
+	} else {
+	    set site ", салон №$siteId"
+	}
     } else {
 	if {[file exists $metaFile]} {
 	    set datetime [clock format [file mtime $metaFile] -format "запись, завершенная %H:%M:%S %d.%m.%Y"]
@@ -43,45 +49,62 @@ proc htmlEscape {text} {
 }
 
 proc showNewFiles {} {
+    catchDbg {set ::sites [readDict [configDictFile sites]]}
     set textFiles [lsort -decreasing -dictionary [glob -nocomplain -directory ~/queue *.text]]
     set content ""
     foreach textFile $textFiles {
 	append content "[showFile $textFile]\n"
     }
     if {$content eq ""} {
-	set content "<p>Пока распознанных текстов нет.</p>\n"
+	set content "<p>Пока распознанных текстов нет.</p>"
     }
     set title [clock format [clock seconds] -format "Результаты распознавания на %H:%M:%S %d.%m.%Y"]
-    return "<html><head><title>$title</title></head><body>\n<h1>$title</h1>\n$content</body></html>"
+    return "<html><head><title>$title</title></head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
 }
 
 proc showReport {} {
+    set title "В работе"
     set content "Report unavailable"
     catch {
 	set h [open ~/queue/report r]
 	set content [read $h]
 	close $h
     }
-    return $content
+    return "<html><head><title>$title</title></head><body>\n[links]\n<pre>\n$content\n</pre>\n</body></html>"
+}
+
+proc links {} {
+    return "<div><a href='/'>результаты распознавания</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href='/report'>в работе</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href='/queue'>очередь</a></div>"
 }
 
 proc showQueue {} {
     set flags [lsort [glob -nocomplain -directory ~/queue *.flag]]
     set title [clock format [clock seconds] -format "Очередь на %H:%M:%S %d.%m.%Y"]
-    append title ": [llength flags] файлов"
-    set content "<table><tbody>\n<tr><th>имя</th><th>Кб</th></tr>\n"
-    foreach flag $flags {
-	set soundFile [file rootname $flagFile]
-	set soundFileName [file tail $soundFile]
-	if {[file exists $soundFile]} {
-	    set size [expr {([file size $soundFile] + 512) / 1024}]
-	} else {
-	    set size —
+    append title ": [pluralRu [llength $flags] запись записи записей]"
+    set content ""
+    if {[llength $flags] > 0} {
+	append content "<table border=1><tbody>\n<tr><th>имя</th><th>Кб</th></tr>\n"
+	foreach flagFile $flags {
+	    set soundFile [file rootname $flagFile]
+	    set soundFileName [file tail $soundFile]
+	    if {[file exists $soundFile]} {
+		set size [expr {([file size $soundFile] + 512) / 1024}]
+	    } else {
+		set size —
+	    }
+	    append content "<tr><td>$soundFileName</td><td>$size</td></tr>\n"
 	}
-	append content "<tr><td>$soundFileName</td><td>$size</td></tr>\n"
+	append content "</tbody></table>\n"
     }
-    append content "</tbody></table>\n"
-    return "<html><head><title>$title</title></head><body>\n<h1>$title</h1>\n$content</body></html>"
+    return "<html><head><title>$title</title></head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
+}
+
+proc withHTTP {text} {
+    if {[regexp {^\s*<html} $text]} {
+	string cat "HTTP/1.0 200 OK\nContent-Type: text/html; charset=utf-8\n\n" $text
+    } else {
+	string cat "HTTP/1.0 200 OK\nContent-Type: text/plain; charset=utf-8\n\n" $text
+    }
 }
 
 proc serveRequest {chan addr port} {
@@ -89,13 +112,13 @@ proc serveRequest {chan addr port} {
     set line [gets $chan]
     switch -regexp $line {
 	{ /report } {
-	    puts $chan "HTTP/1.0 200 OK\nContent-Type: text/plain; charset=utf-8\n\n[showReport]"
+	    puts $chan [withHTTP [showReport]]
 	}
 	{ /queue } {
-	    puts $chan "HTTP/1.0 200 OK\nContent-Type: text/html; charset=utf-8\n\n[showQueue]"
+	    puts $chan [withHTTP [showQueue]]
 	}
 	default {
-	    puts $chan "HTTP/1.0 200 OK\nContent-Type: text/html; charset=utf-8\n\n[showNewFiles]"
+	    puts $chan [withHTTP [showNewFiles]]
 	}
     }
     close $chan
