@@ -11,6 +11,8 @@ proc configFile {filename} {
     file normalize [file join $::configDir $filename]
 }
 
+proc configDictFile {filename} {dictFile [configFile $filename]}
+
 proc getOptions {defaultConfig optionsDesc {usage "options"}} {
     try {
 	array set ::opt {}
@@ -49,26 +51,35 @@ proc parseObject {text} {
     }
 }
 
-proc readDict {fileBase} {
-    if {[file exists $fileBase.json]} {
-	safelog {debug "Reading $fileBase.json"}
-	::json::json2dict [readFile! $fileBase.json]
-    } elseif {[file exists $fileBase.yaml]} {
-	safelog {debug "Reading $fileBase.yaml"}
-	::yaml::yaml2dict -file $fileBase.yaml
-    } elseif {[file exists $fileBase.yml]} {
-	safelog {debug "Reading $fileBase.yml"}
-	::yaml::yaml2dict -file $fileBase.yml
-    } elseif {[file exists $fileBase]} {
-	safelog {debug "Reading $fileBase"}
-	switch -glob $fileBase {
-	    *.json {::json::json2dict [readFile! $fileBase]}
-	    *.yml -
-	    *.yaml {::yaml::yaml2dict -file $fileBase}
-	    default {parseObject [readFile! $fileBase]}
+proc dictFile {fileBase} {
+    switch -glob $fileBase {
+	*.json -
+	*.yaml -
+	*.yml {
+	    if {[file exists $fileBase]} {
+		return $fileBase
+	    } else {
+		error "$fileBase не существует"
+	    }
 	}
-    } else {
-	error "$fileBase{,.json,.yaml,.yml} not found"
+	default {
+	    set exts {json yaml yml}
+	    foreach ext $exts {
+		if {[file exists $fileBase.$ext]} {return $fileBase.$ext}
+	    }
+	    error "$fileBase{.[join $exts ,.]} не существуют"
+	}
+    }
+}
+
+proc readDict {fileBase} {
+    set file [dictFile $fileBase]
+    safelog {debug "Reading $file"}
+    switch -glob $file {
+	*.json {::json::json2dict [readFile! $file]}
+	*.yml -
+	*.yaml {::yaml::yaml2dict -file $file}
+	default {parseObject [readFile! $file]}
     }
 }
 
