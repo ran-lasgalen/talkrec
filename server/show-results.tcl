@@ -6,7 +6,7 @@ source [file join $libtcldir common.tcl]
 set ::sites [dict create]
 
 proc showFile {textFile} {
-    set metaFile [dictFile [file rootname $textFile]]
+    catch {set metaFile [dictFile [file rootname $textFile]]}
     if {[regexp {(\d{4})(\d\d)(\d\d)_(\d\d)(\d\d)(\d\d)_(\d+)_(\w+)} $textFile - y m d H M S siteId employeeId]} {
 	set datetime "запись, начатая $H:$M:$S $d.$m.$y"
 	if {[dict exists $::sites $siteId]} {
@@ -15,7 +15,7 @@ proc showFile {textFile} {
 	    set site ", салон №$siteId"
 	}
     } else {
-	if {[file exists $metaFile]} {
+	if {[info exists metaFile]} {
 	    set datetime [clock format [file mtime $metaFile] -format "запись, завершенная %H:%M:%S %d.%m.%Y"]
 	} else {
 	    set datetime [clock format [file mtime $textFile] -format "запись, распознанная %H:%M:%S %d.%m.%Y"]
