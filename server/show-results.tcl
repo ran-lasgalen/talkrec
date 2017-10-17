@@ -65,13 +65,38 @@ proc showReport {} {
     return $content
 }
 
+proc showQueue {} {
+    set flags [lsort [glob -nocomplain -directory ~/queue *.flag]]
+    set title [clock format [clock seconds] -format "Очередь на %H:%M:%S %d.%m.%Y"]
+    append title ": [llength flags] файлов"
+    set content "<table><tbody>\n<tr><th>имя</th><th>Кб</th></tr>\n"
+    foreach flag $flags {
+	set soundFile [file rootname $flagFile]
+	set soundFileName [file tail $soundFile]
+	if {[file exists $soundFile]} {
+	    set size [expr {([file size $soundFile] + 512) / 1024}]
+	} else {
+	    set size —
+	}
+	append content "<tr><td>$soundFileName</td><td>$size</td></tr>\n"
+    }
+    append content "</tbody></table>\n"
+    return "<html><head><title>$title</title></head><body>\n<h1>$title</h1>\n$content</body></html>"
+}
+
 proc serveRequest {chan addr port} {
     fconfigure $chan -translation auto -buffering line
     set line [gets $chan]
-    if {[regexp { /report } $line]} {
-	puts $chan "HTTP/1.0 200 OK\nContent-Type: text/plain; charset=utf-8\n\n[showReport]"
-    } else {
-	puts $chan "HTTP/1.0 200 OK\nContent-Type: text/html; charset=utf-8\n\n[showNewFiles]"
+    switch -regexp $line {
+	{ /report } {
+	    puts $chan "HTTP/1.0 200 OK\nContent-Type: text/plain; charset=utf-8\n\n[showReport]"
+	}
+	{ /queue } {
+	    puts $chan "HTTP/1.0 200 OK\nContent-Type: text/html; charset=utf-8\n\n[showQueue]"
+	}
+	default {
+	    puts $chan "HTTP/1.0 200 OK\nContent-Type: text/html; charset=utf-8\n\n[showNewFiles]"
+	}
     }
     close $chan
 }
