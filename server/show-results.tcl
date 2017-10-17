@@ -1,7 +1,7 @@
 #!/usr/bin/tclsh
 
-package require Tcl 8.5
-package require yaml
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
 
 proc showFile {textFile} {
     set metaFile [dictFile [file rootname $textFile]]
