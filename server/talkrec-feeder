@@ -5,78 +5,134 @@ source [file join $libtcldir common.tcl]
 
 proc main {} {
     getOptions [configFile dispatcher.yaml] {}
-    if {[catch {readConfig $::opt(config)} err dbg]} {
-	debugStackTrace $dbg
-	::log::log error "Ошибки при чтении конфигурации из $::opt(config):\n$err"
-	exit 2
-    }
+    if {![rereadConfig]} {exit 2}
+    set ::serverState {}
     file mkdir [dict get $::config queue]
-    runQueue
+    runChecks
+    after 1000 runQueue
     cleanFlagWait
-    vwait forever
+}
+
+proc rereadConfig {} {
+    if {[fileModified $::opt(config)]} {
+	if {[catch {readConfig $::opt(config)} err dbg]} {
+	    debugStackTrace $dbg
+	    safelog {error "Ошибки при чтении конфигурации из $::opt(config):\n$err"}
+	    return 0
+	}
+    }
+    return 1
 }
 
 proc readConfig {configFile} {
-    set defaultConfig [dict create queue ~/queue speechkits [dict create 127.0.0.1:80 1]]
+    set defaultConfig [dict create queue ~/queue]
     set readConfig [::yaml::yaml2dict -file $configFile]
     set conf [dict merge $defaultConfig $readConfig]
     set errors {}
-    if {[dict size [dict get $conf speechkits]] <= 0} {
+    if {![dict exists $conf speechkits]} {
 	lappend errors "не указан ни один сервер SpeecKit Box (speechkits)"
+    } else {
+	set sks [dict get $conf speechkits]
+	if {[dict size $sks] <= 0} {
+	    lappend errors "не указан ни один сервер SpeecKit Box (speechkits)"
+	}
+	set sksf [dict create]
+	dict for {k v} $sks {dict set sksf [splitAddr $k 80] $v}
     }
     if {![dict exists $conf asrclient]} {
 	lappend errors "не указан путь к потоковому загрузчику (asrclient)"
     }
     if {[llength $errors] > 0} {error [listOfErrors "" $errors]}
     set ::config $conf
+    set ::speechkits $sksf
 }
 
-proc feedFile {soundFile} {
+proc feedFile {soundFile server} {
     arrangeWait $soundFile.flag
-    dict for {host v} [dict get $::config speechkits] break
-    if {![regexp {^(.+):(\d+)$} $host - host port]} {set port 80}
-    ::log::log info "Распознаем $soundFile на $host:$port..."
+    foreach {host port} $server break
+    safelog {info "Распознаем $soundFile на $host:$port..."}
+    # По мере поступления данных файл открывается на дозапись. Сейчас его надо
+    # очистить.
+    run close [run open $soundFile.tmp w]
+    # Пытаемся запустить скрипт загрузки
     set pipe [run open [list | [dict get $::config asrclient] --key internal --server $host --port $port --ipv4 --silent $soundFile] r]
-    set textH [run open $soundFile.tmp w]
-    if {!$::dryRun} {		# guard for eof on fake channel
-	while {![eof $pipe]} {
-	    set line [gets $pipe]
-	    if {[regexp {^from } $line] || [regexp {^\s*$} $line]} {} else {run puts $textH $line}
+    # Если запустить получилось, то работа на сервере стартовала
+    jobStartedOnServer $soundFile $server
+    if {$::dryRun} {   # если на самом деле мы ничего не делаем, то pipe у нас
+		       # фейковый, заменяем его на пайп от небольшой задержки
+	set pipe [open {| sleep 4}]
+    }
+    fconfigure $pipe -blocking 0
+    fileevent $pipe readable [list getRecognition $soundFile $server $pipe]
+}
+
+proc getRecognition {soundFile server pipe} {
+    try {
+	set textH [run open $soundFile.tmp a]
+	try {
+	    while {[gets $pipe line] >= 0} {
+		if {[regexp {^from } $line] || [regexp {^\s*$} $line]} {} else {run puts $textH $line}
+	    }
+	} finally {
+	    run close $textH
+	}
+    } on error {err dbg} {
+	# Если проблемы при записи, процесс надо прибить
+	catch {exec kill [pid $pipe]}
+    }
+    if {[eof $pipe]} {
+	jobStoppedOnServer $soundFile $server
+	if {[catch {run close $pipe} err dbg]} {
+	    debugStackTrace $dbg
+	    safelog {error "Проблема при распознавании $soundFile:\n$err"}
+	    errorOnServer $server
+	} else {
+	    successOnServer $server
+	    run file rename -force -- $soundFile.tmp $soundFile.text
+	    finishedWith $soundFile.flag
+	    catchDbg {
+		set duration [wavDuration $soundFile]
+		set yh [open $soundFile.yaml r]
+		set lines {}
+		while {[gets $yh line] >= 0} {
+		    if {![regexp {^recordTime\s*:} $line]} {lappend lines $line}
+		}
+		close $yh
+		lappend lines "recordTime: $duration"
+		createFileViaTmp $soundFile.yaml [join $lines "\n"]
+	    }
+	    catch {run file delete -- $soundFile}
+	    safelog {info "$soundFile -> $soundFile.text"}
 	}
     }
-    run close $textH
-    run close $pipe
-    run file rename -force -- $soundFile.tmp $soundFile.text
-    finishedWith $soundFile.flag
-    if {[catch {
-	set duration [wavDuration $soundFile]
-	set yh [open $soundFile.yaml r]
-	set lines {}
-	while {[gets $yh line] >= 0} {
-	    if {![regexp {^recordTime\s*:} $line]} {lappend lines $line}
-	}
-	close $yh
-	lappend lines "recordTime: $duration"
-	createFileViaTmp $soundFile.yaml [join $lines "\n"]
-    } err dbg]} {
-	debugStackTrace $dbg
-    }
-    catch {run file delete -- $soundFile}
-    ::log::log info "$soundFile -> $soundFile.text"
 }
 
 proc runQueue {} {
+    rereadConfig
+    catchDbg {
+	set reportFile [file join [dict get $::config queue] report]
+	set report [reportServerState]
+	set h [open $reportFile.tmp w]
+	puts $h $report
+	close $h
+	file rename -force -- $reportFile.tmp $reportFile
+    }
     set flagFiles [glob -nocomplain -directory [file normalize [dict get $::config queue]] *.flag]
     foreach flagFile [lsort $flagFiles] {
-	if {[needWaitMore $flagFile]} continue
 	set soundFile [file rootname $flagFile]
 	if {![file exists $soundFile]} {
 	    catch {run file delete -- $flagFile}
 	    continue
 	}
-	if [catch {feedFile $soundFile} err dbg] {
+	if {[needWaitMore $flagFile]} continue
+	set server [selectServerFor $soundFile]
+	switch $server {
+	    jobInProgress continue
+	    "" break
+	}
+	if [catch {feedFile $soundFile $server} err dbg] {
 	    debugStackTrace $dbg
-	    ::log::log error "Проблема при распознавании $soundFile:\n$err"
+	    safelog {error "Проблема при распознавании $soundFile:\n$err"}
 	    catch {run file delete -- $soundFile.tmp}
 	}
     }
@@ -112,4 +168,184 @@ proc cleanFlagWait {} {
     after 60000 cleanFlagWait
 }
 
-main
+array set ::yaCheckInterval {
+    connectTimeout 30
+    checkIsGood 2
+    error 600
+    connectOk 60
+    connectFail 600
+}
+
+proc ensureServerState {server} {
+    if {![dict exists $::serverState $server]} {
+	dict set ::serverState $server [dict create connect 0 lastConnectT 0 checking 0 errors 0 lastErrorT 0 jobs [dict create]]
+    }
+}
+
+proc selectServerFor {job} {
+    set candidates {}
+    set now [clock seconds]
+    dict for {server nmax} $::speechkits {
+	if {![dict exists $::serverState $server]} continue
+	dict with ::serverState $server {
+	    if {[dict exists $jobs $job]} {return jobInProgress}
+	    if {!$connect} continue
+	    if {$checking > 0 && $now - $checking >= $::yaCheckInterval(checkIsGood)} continue
+	    if {$errors >= 2 && $now - $lastErrorT <= $::yaCheckInterval(error)} continue
+	    set free [expr {$nmax - [dict size $jobs]}]
+	    if {$free > 0} {lappend candidates {*}[lrepeat $free $server]}
+	}
+    }
+    set ncand [llength $candidates]
+    if {$ncand > 0} {
+	return [lindex $candidates [expr {int(rand() * $ncand)}]]
+    } else {
+	return {}
+    }
+}
+
+proc runChecks {} {
+    rereadConfig
+    foreach server [dict keys $::serverState] {
+	if {![dict exists $::speechkits $server] && [dict get $::serverState $server checking] == 0} {dict unset ::serverState $server}
+    }
+    foreach server [dict keys $::speechkits] {
+	ensureServerState $server
+	set startCheck 0
+	dict with ::serverState $server {
+	    if {$checking == 0} {
+		set since [expr {[clock seconds] - $lastConnectT}]
+		if {$connect} {set intKey connectOk} else {set intKey connectFail}
+		if {$since > $::yaCheckInterval($intKey)} {set startCheck 1}
+	    }
+	}
+	if {$startCheck} {startCheckConnect $server}
+    }
+    after 1000 runChecks
+}
+
+proc startCheckConnect {server} {
+    foreach {host port} $server break
+    set timeout [expr {$::yaCheckInterval(connectTimeout) * 1000}]
+    if {[catch {socket -async $host $port} sock]} {
+	safelog {error "Cannot connect to port $port on $host: $sock"}
+	connectFailed $server
+    } else {
+	dict set ::serverState $server checking [clock seconds]
+	safelog {debug "startCheckConnect $server"}
+	set aid [after $timeout [list checkConnectTimeout $server $sock]]
+	fileevent $sock writable [list checkConnected $server $sock $aid]
+    }
+}
+
+proc connectFailed {server} {
+    if {[dict exists $::serverState $server]} {
+	dict with ::serverState $server {
+	    set connect 0
+	    set lastConnectT [clock seconds]
+	    set checking 0
+	}
+    }
+}
+
+proc connectOk {server} {
+    ensureServerState $server
+    dict with ::serverState $server {
+	set connect 1
+	set lastConnectT [clock seconds]
+	set checking 0
+    }
+}
+
+proc errorOnServer {server} {
+    if {[dict exists $::serverState $server]} {
+	dict with ::serverState $server {
+	    incr errors
+	    set lastErrorT [clock seconds]
+	}
+    }
+}
+
+proc successOnServer {server} {
+    if {[dict exists $::serverState $server]} {
+	dict with ::serverState $server {
+	    set connect 1
+	    set lastConnectT [clock seconds]
+	    set errors 0
+	    set lastErrorT 0
+	}
+    }
+}
+
+proc jobStartedOnServer {job server} {
+    ensureServerState $server
+    dict with ::serverState $server {
+	dict set jobs $job [clock seconds]
+	safelog {debug "$job started on $server ([dict size $jobs] now)"}
+    }
+}
+
+proc jobStoppedOnServer {job server} {
+    if {[dict exists $::serverState $server]} {
+	dict with ::serverState $server {
+	    dict unset jobs $job
+	    safelog {debug "$job stopped on $server ([dict size $jobs] left)"}
+	}
+    } else {
+	safelog {debug "$job stopped on $server (disappeared from configuration)"}
+    }
+}
+
+proc checkConnectTimeout {server sock} {
+    safelog {error "Timeout connecting to $server"}
+    catch {close $sock}
+    connectFailed $server
+}
+
+proc checkConnected {server sock aid} {
+    catch {after cancel $aid}
+    if {[fconfigure $sock -error] eq ""} {
+	catch {close $sock}
+	connectOk $server
+    } else {
+	safelog {error "Cannot connect to $server: [fconfigure $sock -error]"}
+	catch {close $sock}
+	connectFailed $server
+    }
+}
+
+proc since {fmt t now} {
+    set ts [clock format $t -format {%H:%M:%S %d.%m.%Y}]
+    set is [formatTimeInterval [expr {$now - $t}]]
+    format $fmt $ts $is
+}
+
+proc reportServerState {} {
+    set now [clock seconds]
+    set report [list "Servers state report at [clock format $now -format {%H:%M:%S %d.%m.%Y}]\n"]
+    dict for {server state} $::serverState {
+	set rep_s "$server:"
+	dict with state {
+	    if {$checking > 0} {
+		append rep_s "\n  checking connection [since {since %s (for %s)} $checking $now]"
+	    }
+	    if {$lastConnectT > 0} {
+		if {$connect} {set conn ok} {set conn FAIL}
+		append rep_s "\n  connect $conn [since {at %s (%s ago)} $lastConnectT $now]"
+	    }
+	    if {$errors > 0} {
+		append rep_s "\n  $errors continuous errors, last [since {at %s (%s ago)} $lastErrorT $now]"
+	    }
+	    if {[dict size $jobs] > 0} {
+		append rep_s "\n  jobs:"
+		dict for {file time} $jobs {
+		    append rep_s "\n    $file [since {since %s (for %s)} $time $now]"
+		}
+	    }
+	}
+	lappend report $rep_s
+    }
+    join $report "\n"
+}
+
+if {![info exists NoRun]} {main; vwait forever}
