@@ -235,7 +235,7 @@ proc createMainFrame {} {
     $mainFrame setwidget $sf
     set ::employeeFrame [$sf getframe]
     createEmployeesTable $::employeeFrame
-    grid [button $::mainWindow.exit -command exit -text {Завершить работу}]
+    grid [button $::mainWindow.exit -command leaveAllHeadsets -text {Завершить рабочий день}]
 }
 
 proc freeHeadsets {} {
@@ -312,19 +312,17 @@ proc formatRecordTime {time} {
 proc updateWidgetsForEmployee {employeeId headset} {
     if {![dict exists $::employeeControls $employeeId]} return
     dict with ::employeeControls $employeeId {
+	if {$headset eq ""} {$headsetSelector set $::notTaken} else {$headsetSelector set $headset}
 	set state noHeadset
 	set mode auto
 	set time 0
-	safelog {debug [list headset $headset state [array get ::headsetState]]} 
 	if {[info exists ::headsetState($headset)]} {
 	    # Если есть состояние станции с этой гарнитурой, то данные из него
 	    array set st $::headsetState($headset)
-	    safelog {debug [list st [array get st]]}
 	    if {[info exists st(state)]} {set state $st(state)} {set state error}
 	    if {[info exists st(mode)]} {set mode $st(mode)}
 	    if {[info exists st(recordTime)]} {set time $st(recordTime)}
 	} else {
-	    safelog {debug [list NO $headset IN [array get ::headsetState]]}
 	    # Если состояния станции с этой гарнитурой нет, а гарнитура есть, это другая проблема
 	    if {$headset ne ""} {set state headsetAbsent}
 	}
@@ -400,6 +398,19 @@ proc leaveHeadset {employeeId} {
 	forbidRecordOnHeadset $hs {}
 	unset -nocomplain ::headsetsInUse(h_$hs) ::headsetsInUse(e_$employeeId)
 	updateWidgetsForEmployee $employeeId {}
+    }
+}
+
+proc leaveAllHeadsets {} {
+    foreach chan [array names ::chanPeer] {
+	sendRequest $chan [list [nextCommandId] start mode forbid]
+    }
+    foreach headset [array names ::availableHeadsets] {
+	if {[info exists ::headsetsInUse(h_$headset)]} {
+	    set eid $::headsetsInUse(h_$headset)
+	    unset -nocomplain ::headsetsInUse(e_$eid) ::headsetsInUse(h_$headset)
+	    updateWidgetsForEmployee $eid {}
+	}
     }
 }
 
