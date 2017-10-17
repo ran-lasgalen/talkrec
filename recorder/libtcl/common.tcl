@@ -271,3 +271,12 @@ proc wavDuration {file} {
     }
     expr {double($dataLen) / $fmt(bytesPerSec)}
 }
+
+proc pluralRu {n one two five} {
+    set n2 [expr {$n % 100}]
+    set n1 [expr {$n % 10}]
+    if {$n2 >= 5 && $n2 <= 20} {return "$n $five"}
+    if {$n1 == 1} {return "$n $one"}
+    if {$n1 in {2 3 4}} {return "$n $two"}
+    return "$n $five"
+}
