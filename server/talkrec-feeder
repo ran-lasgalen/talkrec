@@ -192,6 +192,7 @@ proc selectServerFor {job} {
 	    if {!$connect} continue
 	    if {$checking > 0 && $now - $checking >= $::yaCheckInterval(checkIsGood)} continue
 	    if {$errors >= 2 && $now - $lastErrorT <= $::yaCheckInterval(error)} continue
+	    if {$errors > 0 && $nmax > 0} {set nmax 1}
 	    set free [expr {$nmax - [dict size $jobs]}]
 	    if {$free > 0} {lappend candidates {*}[lrepeat $free $server]}
 	}
