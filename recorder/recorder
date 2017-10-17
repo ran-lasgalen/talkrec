@@ -407,7 +407,7 @@ proc main {} {
 	::log::log error "Ошибка чтения конфигурации из $::opt(-config):\n$err"
 	exit 2
     }
-    set ::maxRecordTime 1800
+    set ::maxRecordTime 300
     set ::mode forbid
     array set ::intent [list \
 			    mode forbid \
