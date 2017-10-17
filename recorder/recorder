@@ -400,11 +400,11 @@ proc readConfig {file} {
 }
 
 proc main {} {
-    getOptions [configFile recorder.yaml] {}
+    getOptions [configDictFile recorder] {}
     array set ::recordState {state restart}
-    if {[catch {readConfig $::opt(config)} err dbg]} {
+    if {[catch {readConfig $::opt(-config)} err dbg]} {
 	debugStackTrace $dbg
-	::log::log error "Ошибка чтения конфигурации из $::opt(config):\n$err"
+	::log::log error "Ошибка чтения конфигурации из $::opt(-config):\n$err"
 	exit 2
     }
     set ::maxRecordTime 1800

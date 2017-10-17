@@ -9,10 +9,10 @@ package require yaml
 
 proc main {} {
     set optDesc {
-	{server.arg "" "IP-адрес сервера распознавания"}
-	{recorders.arg "" "IP-адреса устройств записи, через запятую"}
-	{headset.arg "" "Номер гарнитуры на этой станции записи"}
-	{site.arg "" "Номер салона"}
+	{-server.arg "" "IP-адрес сервера распознавания"}
+	{-recorders.arg "" "IP-адреса устройств записи, через запятую"}
+	{-headset.arg "" "Номер гарнитуры на этой станции записи"}
+	{-site.arg "" "Номер салона"}
     }
     getOptions - $optDesc "\[OPTIONS] demo|CONFIG_FILE"
     set cfg [lindex $::argv 0]
@@ -22,15 +22,15 @@ proc main {} {
     }
     try {
 	if {$cfg eq "demo"} {
-	    set configFile [file join $::exampledir recorder.yaml]
+	    set configFile [dictFile [file join $::exampledir recorder]]
 	    set fillRequired [dict create headset 1 siteId 1]
 	    set ::runStyle demo
 	} else {
-	    set configFile [file normalize $cfg]
+	    set configFile [dictFile [file normalize $cfg]]
 	    set fillRequired [dict create]
 	    set ::runStyle systemd
 	}
-	set ::config [dict merge $fillRequired [::yaml::yaml2dict -file $configFile]]
+	set ::config [dict merge $fillRequired [readDict $configFile]]
     } on error {err dbg} {
 	debugStackTrace $dbg
 	puts stderr $err
@@ -40,20 +40,20 @@ proc main {} {
 	set ::runStyle [dict get $::config runStyle]
 	dict unset ::config runStyle
     }
-    if {$::opt(server) ne ""} {
-	dict set ::config server $::opt(server)
+    if {$::opt(-server) ne ""} {
+	dict set ::config server $::opt(-server)
     } elseif {![dict exists $::config server]} {
 	puts -nonewline "IP-адрес сервера распознавания: "
 	flush stdout
 	dict set ::config server [string trim [gets stdin]]
     }
-    if {$::opt(recorders) ne ""} {
-	dict set ::config recorders [split $::opt(recorders) ,]
+    if {$::opt(-recorders) ne ""} {
+	dict set ::config recorders [split $::opt(-recorders) ,]
     } elseif {![dict exists $::config recorders]} {
 	dict set ::config recorders [inputList "Введите адреса станций записи" "Адрес станции"]
     }
-    if {$::opt(headset) ne ""} {dict set ::config headset $::opt(headset)}
-    if {$::opt(site) ne ""} {dict set ::config siteId $::opt(site)}
+    if {$::opt(-headset) ne ""} {dict set ::config headset $::opt(-headset)}
+    if {$::opt(-site) ne ""} {dict set ::config siteId $::opt(-site)}
     foreach param {server headset siteId user password recorders} {
 	if {![dict exists $::config $param] < 0} {
 	    append errors "\n- не указан обязательный параметр $param"

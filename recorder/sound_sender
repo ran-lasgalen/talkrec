@@ -5,7 +5,7 @@ source [file join $libtcldir common.tcl]
 package require yaml
 
 proc main {} {
-    getOptions [configFile recorder.yaml] {}
+    getOptions [configDictFile recorder] {}
     if {![rereadConfig]} {exit 2}
     after idle runQueue
     vwait forever
@@ -13,7 +13,7 @@ proc main {} {
 
 proc rereadConfig {} {
     try {
-	if {[fileModified $::opt(config)]} {set ::config [readConfig $::opt(config)]}
+	if {[fileModified $::opt(-config)]} {set ::config [readConfig $::opt(-config)]}
 	return true
     } on error err {
 	::log::log error $err

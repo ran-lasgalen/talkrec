@@ -8,11 +8,11 @@ package require BWidget
 set ::notTaken —
 
 proc main {} {
-    getOptions [configFile record_manager.yaml] {}
+    getOptions [configDictFile record_manager] {}
     try {
 	# Ключ - имя, значение - employeeId
-	array set ::employee [::yaml::yaml2dict -file [configFile employees.yaml]]
-	set ::config [readConfig $::opt(config)]
+	array set ::employee [readDict [configFile employees]]
+	set ::config [readConfig $::opt(-config)]
     } on error {err dbg} {
 	debugStackTrace $dbg
 	puts stderr $err

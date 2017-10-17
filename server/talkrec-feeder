@@ -4,7 +4,7 @@ set libtcldir [file join [file dirname [file dirname [file normalize [info scrip
 source [file join $libtcldir common.tcl]
 
 proc main {} {
-    getOptions [configFile dispatcher.yaml] {}
+    getOptions [configDictFile dispatcher] {}
     if {![rereadConfig]} {exit 2}
     set ::serverState {}
     file mkdir [dict get $::config queue]
@@ -14,10 +14,10 @@ proc main {} {
 }
 
 proc rereadConfig {} {
-    if {[fileModified $::opt(config)]} {
-	if {[catch {readConfig $::opt(config)} err dbg]} {
+    if {[fileModified $::opt(-config)]} {
+	if {[catch {readConfig $::opt(-config)} err dbg]} {
 	    debugStackTrace $dbg
-	    safelog {error "Ошибки при чтении конфигурации из $::opt(config):\n$err"}
+	    safelog {error "Ошибки при чтении конфигурации из $::opt(-config):\n$err"}
 	    return 0
 	}
     }
