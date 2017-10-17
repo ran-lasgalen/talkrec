@@ -73,7 +73,7 @@ proc main {} {
 }
 
 proc doInstall {} {
-    set needDebs {tcl tcllib tk rsync}
+    set needDebs {tcl tcllib tk bwidget rsync}
     if {[catch {dict get $::config soundSystem} soundSystem]} {
 	lappend needDebs sox pulseaudio pulseaudio-utils
     } else {

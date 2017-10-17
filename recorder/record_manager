@@ -3,6 +3,7 @@
 set libtcldir [file join [file dirname [file normalize [info script]]] libtcl]
 source [file join $libtcldir common.tcl]
 package require yaml
+package require BWidget
 
 set ::notTaken —
 
@@ -225,9 +226,14 @@ proc createMainFrame {} {
     wm iconname $::mainWindow "Управление записью"
     wm attributes $::mainWindow -fullscreen 1
     grid anchor $::mainWindow center
-    set mainFrame [frame $::mainWindow.mainFrame]
-    grid $mainFrame
-    set ::employeeFrame $mainFrame
+    set mainFrame [ScrolledWindow .mainFrame]
+    grid $mainFrame -sticky nswe
+    array set i [grid info $mainFrame]
+    grid columnconfigure $i(-in) $i(-column) -weight 1
+    grid rowconfigure $i(-in) $i(-row) -weight 1
+    set sf [ScrollableFrame $mainFrame.sf]
+    $mainFrame setwidget $sf
+    set ::employeeFrame [$sf getframe]
     createEmployeesTable $::employeeFrame
     grid [button $::mainWindow.exit -command exit -text {Завершить работу}]
 }
@@ -407,6 +413,7 @@ proc createEmployeesTable container {
 	    $selector set $::notTaken
 	}
     }
+    grid anchor $container center
     set ::employeeControls [dict create]
     set hName [label $container.hName -font $::defaultBoldFont -text Имя]
     set hHeadset [label $container.hHeadset -font $::defaultBoldFont -text Гарнитура]
