@@ -2,6 +2,7 @@ package require Tcl 8.5
 package require log 1.3
 package require cmdline 1.3.3
 package require yaml 0.3.6
+package require json 1.3
 
 set ::configDir [file normalize ~/.config/talkrec]
 set ::dryRun 0
@@ -37,6 +38,37 @@ proc getOptions {defaultConfig optionsDesc {usage "options"}} {
 	debugStackTrace $dbg
 	puts stderr $err
 	exit 1
+    }
+}
+
+proc parseObject {text} {
+    switch -regexp $text {
+	"^\\s*\\\{" {::json::json2dict $text}
+	"^\\s*\\\[" {::json::many-json2dict $text}
+	default {::yaml::yaml2dict $text}
+    }
+}
+
+proc readDict {fileBase} {
+    if {[file exists $fileBase.json]} {
+	safelog {debug "Reading $fileBase.json"}
+	::json::json2dict [readFile! $fileBase.json]
+    } elseif {[file exists $fileBase.yaml]} {
+	safelog {debug "Reading $fileBase.yaml"}
+	::yaml::yaml2dict -file $fileBase.yaml
+    } elseif {[file exists $fileBase.yml]} {
+	safelog {debug "Reading $fileBase.yml"}
+	::yaml::yaml2dict -file $fileBase.yml
+    } elseif {[file exists $fileBase]} {
+	safelog {debug "Reading $fileBase"}
+	switch -glob $fileBase {
+	    *.json {::json::json2dict [readFile! $fileBase]}
+	    *.yml -
+	    *.yaml {::yaml::yaml2dict -file $fileBase}
+	    default {parseObject [readFile! $fileBase]}
+	}
+    } else {
+	error "$fileBase{,.json,.yaml,.yml} not found"
     }
 }
 
@@ -95,6 +127,11 @@ proc readFile {file} {
     set res [run read $fh]
     run close $fh
     return $res
+}
+
+proc readFile! {file} {
+    set fh [open $file r]
+    try { read $fh } finally { close $fh }
 }
 
 proc createFileViaTmp {filename chanvarOrContent args} {
@@ -177,6 +214,7 @@ proc formatTimeInterval {seconds} {
     } else {
 	format "%d:%02d" $m $s
     }
+}
 
 proc wavDuration {file} {
     proc parseFmtChunk {chan scanFmts} {
