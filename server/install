@@ -5,7 +5,62 @@ set ::exampleDir [file join $::scriptDir example]
 set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
 source [file join $libtcldir common.tcl]
 source [file join $libtcldir install.tcl]
-package require yaml
+# package require json::write
+
+# proc main {} {
+#     set optDesc {
+# 	{-addr.arg "" "Server address"}
+#     }
+#     getOptions - $optDesc
+#     file mkdir $::configDir
+#     file attributes $::configDir -permissions 0700
+#     set ::configFile [configFile server-install.json]
+#     if {[file exists $::configFile]} {
+# 	set ::config [readDict $::configFile]
+#     } else {
+# 	set ::config [dict create]
+#     }
+#     # Соображаем адрес сервера
+#     if {$::opt(-addr) ne ""} {dict set ::config addr $::opt(-addr)}
+#     if {![dict exists $::config addr]} {
+# 	set pipe [open {| ip -o ad ls} r]
+# 	while {[gets $pipe line] >= 0} {
+# 	    if {[dict exists $::config addr] || [regexp {^\d+:\s*lo\s} $line]} continue
+# 	    if {[regexp {^\d+:\s*\S+\s+inet\s+(\d+\.\d+\.\d+\.\d+)} $line - addr]} {
+# 		puts -nonewline "Адрес сервера $addr? \[yд/nн] "
+# 		flush stdout
+# 		switch -glob [string trim [gets stdin]] {
+# 		    y* -
+# 		    д* {dict set ::config addr $addr}
+# 		}
+# 	    }
+# 	}
+# 	close $pipe
+#     }
+#     if {[catch {dict get $::config addr} ::addr]} {
+# 	error "Адрес сервера не указан, и установить его не удалось"
+#     }
+#     if {![regexp {^(\d+)\.(\d+)\.(\d+)\.(\d+)$} $::addr - b0 b1 b2 b3] ||
+# 	$b0 > 255 || $b1 > 255 || $b2 > 255 || $b3 > 255} {
+# 	error "Адрес $::addr не является годным IPv4-адресом"
+#     }
+#     puts "Адрес сервера: $::addr"
+#     # необходимые пакеты
+#     set needDebs {git tcl8.6 tcllib rsync tcl8.6-tdbc-postgres postgresql}
+#     if {[catch {dict get $::config asrclient} asrclient]} {
+# 	set ::asrclient [findExecutable asrclient-cli.py]
+#     }
+#     if {![file executable $::asrclient]} {unset ::asrclient}
+#     if {![info exists ::asrclient]} {lappend needDebs python2.7 python-setuptools python-pip protobuf-compiler}
+#     installDebs $needDebs
+#     # database
+#     if {[catch {dict get $::config dbUser} ::dbUser]} {set ::dbUser $::tcl_platform(user)}
+#     set ::env(PGUSER) $::dbUser
+#     if {[dict exists $::config dbPassword]} {set ::env(PGPASSWORD) [dict get $::config dbPassword]}
+#     # check connection
+#     if {[catch {runExec psql -w -h localhost template1 -c {\q}} err]} {error $err}
+#     saveConfig
+# }
 
 proc main {} {
     set optDesc {}
@@ -130,4 +185,8 @@ proc fixExamplePathsIn {text} {
     string map [list /home/user/talkrec $codeDir /home/user/.config/talkrec $::configDir /home/user/queue $queueDir /home/user $homeDir] $text
 }
 
-main
+if {[catch main err dbg]} {
+    debugStackTrace $dbg
+    puts stderr $err
+    exit 2
+}

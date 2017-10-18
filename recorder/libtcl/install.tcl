@@ -1,4 +1,4 @@
-proc installDebs {debs} {
+proc debsYetToInstall {debs} {
     set need {}
     foreach deb $debs {
 	set found 0
@@ -11,9 +11,66 @@ proc installDebs {debs} {
 	} on error {} {}
 	if {!$found} {lappend need $deb}
     }
+    return $need
+}
+
+proc installDebs {debs} {
+    set need [debsYetToInstall $debs]
     if {[llength $need] > 0} {
-	run exec sudo apt-get install --yes {*}$need >@ stdout 2>@ stderr
+	prepareSudo
+	runExec sudo apt-get install --yes {*}$need
     }
+}
+
+proc readPassword {prompt} {
+    try {
+	catch {exec stty -echo}
+	puts -nonewline "$prompt: "
+	flush stdout
+	gets stdin line
+	puts ""
+	string trim $line
+    } finally {
+	catch {exec stty echo}
+    }
+}
+
+proc prepareSudo {{password {}}} {
+    try {
+	if {![catch {exec sudo -n true}]} {return 1}
+	if {$password eq ""} {
+	    if {[info exists ::sudoPassword]} {
+		set password $::sudoPassword
+	    } else {
+		set password [readPassword "password for sudo"]
+	    }
+	}
+	set pipe [open {| sudo -S true 2> /dev/null} w]
+	puts $pipe $password
+	close $pipe
+	set ::sudoPassword $password
+	return 1
+    } on error err {
+	error "prepareSudo failed: $err"
+    }
+}
+
+proc saveConfig {} {
+    ::json::write indented 1
+    set object {}
+    dict for {k v} $::config {
+	switch $k {
+	    default {
+		lappend object $k
+		if {[regexp {^-?\d+(.\d+)?([eE][+-]?\d+)?$} $v]} {
+		    lappend object $v
+		} else {
+		    lappend object [::json::write string $v]
+		}
+	    }
+	}
+    }
+    createFileViaTmp $::configFile [::json::write object {*}$object]
 }
 
 proc prefixLines {prefix message} {
