@@ -4,13 +4,23 @@ set ::scriptDir [file dirname [file normalize [info script]]]
 set ::libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
 source [file join $libtcldir common.tcl]
 source [file join $libtcldir install.tcl]
+package require tdbc
+package require tdbc::postgres
 
 proc main {} {
-    getOptions - {}
+    getOptions - {
+	{--gen-only "Только сделать файлы для установки"}
+    }
     set ::ip [lindex $::argv 0]
     if {[catch {readDict [configDictFile install-recorder]} config]} {set config {}}
-    set defaultConfig [dict create user user]
+    set defaultConfig [dict create remoteUser user]
     set ::config [dict merge $defaultConfig $config]
+    if {![dict exists $::config serverAddr]} {
+	dict set ::config serverAddr [getServerAddr]
+	createFileViaTmp [configFile install-recorder.json] [simpleDictToJSON $::config 1]
+    }
+    ::tdbc::postgres::connection create db -database talkrec
+    set ipConf [siteAndHeadsetForIP $::ip]
     set pwFile [configFile recorder.pw]
     puts "Проверяем наличие пароля станции в $pwFile..."
     set ::sudoPassword [string trim [readFile! $pwFile]]
@@ -31,6 +41,11 @@ proc main {} {
     puts $sh [readFile [file join $::scriptDir on-recorder.tcl]]
     close $sh
     file attributes $installRecorder -permissions 0755
+    # Создаем конфиги
+    createFileViaTmp [file join $::installerDir recorder.json] [genRecorderConfig $ipConf [dict get $::config serverAddr]]
+    createFileViaTmp [file join $::installerDir record_manager.json] [genRecordManagerConfig [dict get $ipConf site_id]]
+    createFileViaTmp [file join $::installerDir employees.json] [genEmployeesConfig [dict get $ipConf site_id]]
+    if {$::opt(-gen-only)} return
     # Обеспечиваем возможность зайти по ssh
     if {[catch {runExec {*}[sshToStation true]}]} {
 	runExec sshpass -f$pwFile ssh-copy-id -o StrictHostKeyChecking=no [sshWhere]
@@ -44,8 +59,75 @@ proc main {} {
     file delete -force -- $::installerDir
 }
 
+proc genEmployeesConfig {siteId} {
+    set employees {}
+    db foreach -as lists r {select name, id from employee, site_employee where id = employee_id and site_id = :siteId order by name} {lappend employees {*}$r}
+    ::json::write object {*}$employees
+}
+
+proc genRecordManagerConfig {siteId} {
+    set recorders [db allrows -as lists {select ip from record_station where site_id = :siteId}]
+    set recordersJSON [::json::write array {*}[lmap el $recorders {::json::write string $el}]]
+    ::json::write object siteId $siteId recorders $recordersJSON
+}
+
+proc genRecorderConfig {ipConf serverAddr} {
+    set user site[dict get $ipConf site_id]
+    set config [dict create headset [dict get $ipConf headset] recorderPort 17119 \
+		    soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460 \
+		    server $serverAddr user $user password [getSiteRsyncPassword $user]]
+    simpleDictToJSON $config 1
+}
+
+proc getServerAddr {} {
+    set pipe [open {| ip -o ad ls scope global} r]
+    try {
+	while {[gets $pipe line] >= 0} {
+	    if {[regexp {\sinet\s+(\d+\.\d+\.\d+\.\d+)} $line - ip]} {
+		puts -nonewline "Адрес сервера - $ip? (YД/nн) "
+		flush stdout
+		gets stdin reply
+		if {[regexp {^\s*([yYдД]|$)} $reply]} {return $ip}
+	    }
+	}
+	error "getServerAddr: годного адреса сервера не нашлось"
+    } finally {
+	close $pipe
+    }
+}
+
+proc getSiteRsyncPassword {user} {
+    set h [open [configFile rsyncd.secrets] r]
+    try {
+	while {[gets $h line] >= 0} {
+	    foreach {login password} [split $line :] break
+	    if {[string trim $login] ne $user} continue
+	    set password [string trim $password]
+	    if {$password eq ""} {error "Пароль для $login пустой"}
+	    return $password
+	}
+    } finally {close $h}
+    set h [open /dev/urandom r]
+    try {set password [binary encode hex [read $h 16]]} finally {close $h}
+    set h [open [configFile rsyncd.secrets] a]
+    try {puts $h "${user}:$password"} finally {close $h}
+    return $password
+}
+
+proc siteAndHeadsetForIP {ip} {
+    set result [db allrows {select headset, site_id from record_station where ip = :ip}]
+    switch [llength $result] {
+	1 {set conf [lindex $result 0]}
+	0 {error "База данных ничего не знает про станцию с IP $ip"}
+	default {error "В базе данных несколько записей про станцию с IP $ip:\n$result"}
+    }
+    if {![dict exists $conf headset]} {error "Неизвестен номер гарнитуры для $ip"}
+    if {![dict exists $conf site_id]} {error "Неизвестен салон, в котором находится $ip"}
+    return $conf
+}
+
 proc sshWhere {} {
-    set user [dict get $::config user]
+    set user [dict get $::config remoteUser]
     if {$user ne ""} {append user @}
     string cat $user $::ip
 }
@@ -56,18 +138,6 @@ proc sshToStation {args} {
 
 proc sshCmd {where args} {
     concat [list ssh -o BatchMode=yes $where] $args
-}
-
-proc sudoWithPwCmd {args} {
-    if {"sudo" ni $args} {set args [concat {sudo -S} $args]}
-    set cmd [concat | $args {>@ stdout 2>@ stderr}]
-    safelog {debug $cmd}
-    try {
-	set pipe [open $cmd w]
-	try { puts $pipe $::sudoPassword } finally { close $pipe }
-    } on error err {
-	error "sudoWithPwCmd $args:\n  $err"
-    }
 }
 
 try {main} on error {err dbg} {debugStackTrace $dbg; puts stderr $err; exit 2}
