@@ -67,24 +67,6 @@ proc prepareSudo {{password {}}} {
     }
 }
 
-proc saveConfig {} {
-    ::json::write indented 1
-    set object {}
-    dict for {k v} $::config {
-	switch $k {
-	    default {
-		lappend object $k
-		if {[regexp {^-?\d+(.\d+)?([eE][+-]?\d+)?$} $v]} {
-		    lappend object $v
-		} else {
-		    lappend object [::json::write string $v]
-		}
-	    }
-	}
-    }
-    createFileViaTmp $::configFile [::json::write object {*}$object]
-}
-
 proc prefixLines {prefix message} {
     string cat $prefix [join [split $message \n] "\n$prefix"]
 }
