@@ -224,7 +224,7 @@ proc createMainFrame {} {
     set ::mainWindow .
     wm title $::mainWindow "Управление записью"
     wm iconname $::mainWindow "Управление записью"
-    wm attributes $::mainWindow -fullscreen 1
+    #wm attributes $::mainWindow -fullscreen 1
     grid anchor $::mainWindow center
     set mainFrame [ScrolledWindow .mainFrame]
     grid $mainFrame -sticky nswe
