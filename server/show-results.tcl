@@ -4,11 +4,14 @@ set libtcldir [file join [file dirname [file dirname [file normalize [info scrip
 source [file join $libtcldir common.tcl]
 
 set ::sites [dict create]
+set ::siteIdMap [dict create]
+set ::employeeIdMap [dict create]
 
 proc showFile {textFile} {
     catch {set metaFile [dictFile [file rootname $textFile]]}
-    if {[regexp {(\d{4})(\d\d)(\d\d)_(\d\d)(\d\d)(\d\d)_(\d+)_(\w+)} $textFile - y m d H M S siteId employeeId]} {
+    if {[regexp {(\d{4})(\d\d)(\d\d)_(\d\d)(\d\d)(\d\d)_(?:site)?(\d+)_(\w+)} $textFile - y m d H M S siteM employeeId]} {
 	set datetime "запись, начатая $H:$M:$S $d.$m.$y"
+	if {[catch {dict get $::siteIdMap $siteM} siteId]} {set siteId $siteM}
 	if {[dict exists $::sites $siteId]} {
 	    set site ", [dict get $::sites $siteId]"
 	} else {
@@ -50,6 +53,11 @@ proc htmlEscape {text} {
 
 proc showNewFiles {} {
     catchDbg {set ::sites [readDict [configDictFile sites]]}
+    catchDbg {
+	set rd [readDict [configDictFile site-emp-maps]]
+	if {[dict exists $rd siteMap]} {set ::siteIdMap [dict get $rd siteMap]}
+	if {[dict exists $rd employeeMap]} {set ::employeeIdMap [dict get $rd employeeMap]}
+    }
     set textFiles [lsort -decreasing -dictionary [glob -nocomplain -directory ~/queue *.text]]
     set content ""
     foreach textFile $textFiles {
