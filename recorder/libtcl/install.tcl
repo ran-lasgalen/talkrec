@@ -22,7 +22,7 @@ proc installDebs {debs} {
     }
 }
 
-proc sudoWithPwCmd {args} {
+proc sudoWithPw {args} {
     if {"sudo" ni $args} {set args [concat {sudo -S} $args]}
     set cmd [concat | $args {>@ stdout 2>@ stderr}]
     safelog {debug $cmd}
@@ -30,7 +30,7 @@ proc sudoWithPwCmd {args} {
 	set pipe [open $cmd w]
 	try { puts $pipe $::sudoPassword } finally { close $pipe }
     } on error err {
-	error "sudoWithPwCmd $args:\n  $err"
+	error "sudoWithPw $args:\n  $err"
     }
 }
 
