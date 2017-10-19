@@ -2,6 +2,7 @@ package require Tcl 8.5
 package require log 1.3
 package require yaml 0.3.6
 package require json 1.3
+package require json::write 1.0.2
 
 set ::configDir [file normalize ~/.config/talkrec]
 set ::dryRun 0
@@ -349,4 +350,22 @@ proc pluralRu {n one two five} {
     if {$n1 == 1} {return "$n $one"}
     if {$n1 in {2 3 4}} {return "$n $two"}
     return "$n $five"
+}
+
+proc simpleDictToJSON {dict indented} {
+    ::json::write indented $indented
+    set object {}
+    dict for {k v} $dict {
+	switch $k {
+	    default {
+		lappend object $k
+		if {[regexp {^-?\d+(.\d+)?([eE][+-]?\d+)?$} $v]} {
+		    lappend object $v
+		} else {
+		    lappend object [::json::write string $v]
+		}
+	    }
+	}
+    }
+    ::json::write object {*}$object
 }
