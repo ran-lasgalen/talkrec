@@ -1,0 +1,73 @@
+#!/usr/bin/tclsh
+
+set ::scriptDir [file dirname [file normalize [info script]]]
+set ::libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
+source [file join $libtcldir install.tcl]
+
+proc main {} {
+    getOptions - {}
+    set ::ip [lindex $::argv 0]
+    if {[catch {readDict [configDictFile install-recorder]} config]} {set config {}}
+    set defaultConfig [dict create user user]
+    set ::config [dict merge $defaultConfig $config]
+    set pwFile [configFile recorder.pw]
+    puts "Проверяем наличие пароля станции в $pwFile..."
+    set ::sudoPassword [string trim [readFile! $pwFile]]
+    puts "... найден."
+    # Создаем папку с файлами для установки
+    set ::installerDir "talkrec-install-$::ip"
+    file delete -force -- $::installerDir
+    file mkdir $::installerDir
+    file attributes $::installerDir -permissions 0700
+    # Создаем скрипт установки
+    set installRecorder [file join $::installerDir install]
+    set sh [open $installRecorder w]
+    puts $sh "#!/usr/bin/tclsh"
+    puts $sh [readFile [file join $::libtcldir common.tcl]]
+    puts $sh ""
+    puts $sh [readFile [file join $::libtcldir install.tcl]]
+    puts $sh ""
+    puts $sh [readFile [file join $::scriptDir on-recorder.tcl]]
+    close $sh
+    file attributes $installRecorder -permissions 0755
+    # Обеспечиваем возможность зайти по ssh
+    if {[catch {runExec {*}[sshToStation true]}]} {
+	runExec sshpass -f$pwFile ssh-copy-id -o StrictHostKeyChecking=no [sshWhere]
+    }
+    # Ставим там пакеты, необходимые для работы инсталлятора на месте
+    sudoWithPwCmd {*}[sshToStation sudo -S apt-get install --yes tcl tcllib]
+    # Копируем инсталлятор
+    runExec scp -rp $::installerDir [sshWhere]:
+    # Запускаем инсталлятор
+    runExec {*}[sshToStation ./$installRecorder --sudo-pw $::sudoPassword]
+    file delete -force -- $::installerDir
+}
+
+proc sshWhere {} {
+    set user [dict get $::config user]
+    if {$user ne ""} {append user @}
+    string cat $user $::ip
+}
+
+proc sshToStation {args} {
+    sshCmd [sshWhere] {*}$args
+}
+
+proc sshCmd {where args} {
+    concat [list ssh -o BatchMode=yes $where] $args
+}
+
+proc sudoWithPwCmd {args} {
+    if {"sudo" ni $args} {set args [concat {sudo -S} $args]}
+    set cmd [concat | $args {>@ stdout 2>@ stderr}]
+    safelog {debug $cmd}
+    try {
+	set pipe [open $cmd w]
+	try { puts $pipe $::sudoPassword } finally { close $pipe }
+    } on error err {
+	error "sudoWithPwCmd $args:\n  $err"
+    }
+}
+
+try {main} on error {err dbg} {debugStackTrace $dbg; puts stderr $err; exit 2}
