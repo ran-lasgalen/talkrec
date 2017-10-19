@@ -121,12 +121,6 @@ proc installSystemdService {exampleFile {service ""}} {
     set fh [run open $tmpFile w]
     run puts -nonewline $fh $content
     run close $fh
-    if {[catch {readFile [list | loginctl show-user $::tcl_platform(user)]} showUser]} {
-	set lingerEnabled 0
-    } else {
-	set lingerEnabled [regexp Linger=yes $showUser]
-    }
-    if {!$lingerEnabled} {runExec loginctl enable-linger $::tcl_platform(user)}
     if {[filesEqual $tmpFile $serviceFile]} {
 	run file delete -- $tmpFile
     } else {
