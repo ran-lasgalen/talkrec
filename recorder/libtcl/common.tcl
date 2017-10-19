@@ -1,6 +1,5 @@
 package require Tcl 8.5
 package require log 1.3
-package require cmdline 1.3.3
 package require yaml 0.3.6
 package require json 1.3
 
@@ -13,16 +12,87 @@ proc configFile {filename} {
 
 proc configDictFile {filename} {dictFile [configFile $filename]}
 
+proc usage {optionsDesc {message {}} {usage options}} {
+    set msg {}
+    if {$message ne ""} {lappend msg $message}
+    lappend msg "Usage: [file tail $::argv0] $usage"
+    foreach od $optionsDesc {
+	if {[llength $od] == 2} {
+	    lappend msg "  [lindex $od 0]\t[lindex $od 1]"
+	} elseif {[llength $od] == 3} {
+	    lappend msg "  [lindex $od 0]\t[lindex $od 2] \[[lindex $od 1]]"
+	} else {
+	    lappend msg "  $od"
+	}
+    }
+    join $msg "\n"
+}
+
+proc parseOptions {argsVar optionsDesc {usage options}} {
+    upvar $argsVar argv
+    array set options {}
+    set leftArgs {}
+    proc mainOptKey {optDesc} {
+	set o [lindex $optDesc 0 0]
+	regexp {^-(-.*)} $o - o
+	return $o
+    }
+    lappend optionsDesc {--debug "включить отладку"}
+    lappend optionsDesc {--dry-run "Не выполнять команды, меняющие ситуацию, а только показывать их"}
+    lappend optionsDesc {-- "дальше - не опции"}
+    lappend optionsDesc {--help "список опций"}
+    foreach opt $optionsDesc {
+	if {[lindex $opt 0 0] in {-- --help}} continue
+	set k [mainOptKey $opt]
+	switch [llength $opt] {
+	    2 {set options($k) 0}
+	    3 {set options($k) [lindex $opt 1]}
+	    default {error "Ошибка описания опции '$opt'.\nОписание опции - 2- или 3-элементный список"}
+	}
+    }
+    while {[llength $argv] > 0} {
+	set el [lindex $argv 0]
+	set argv [lreplace $argv 0 0]
+	set found 0
+	foreach optDesc $optionsDesc {
+	    if {$found} continue
+	    foreach ov [lindex $optDesc 0] {
+		if {$found} continue
+		if {$ov eq $el} {
+		    if {$ov eq "--"} {
+			set argv [concat $leftArgs $argv] 
+			return [array get options]
+		    }
+		    set found 1
+		    set k [mainOptKey $optDesc]
+		    switch [llength $optDesc] {
+			2 {set options($k) 1}
+			3 {
+			    if {[llength $argv] == 0} {error [usage $optionsDesc "Опция $ov требует аргумента" $usage]}
+			    set options($k) [lindex $argv 0]
+			    set argv [lreplace $argv 0 0]
+			}
+		    }
+		}
+	    }
+	}
+	if {!$found} {
+	    if {[regexp {^-.} $el]} {error [usage $optionsDesc "Неизвестная опция $el" $usage]}
+	    lappend leftArgs $el
+	}
+    }
+    set argv $leftArgs
+    return [array get options]
+}
+
 proc getOptions {defaultConfig optionsDesc {usage "options"}} {
     try {
 	array set ::opt {}
 	set optDesc $optionsDesc
 	set okIfNoDefaultConfig 0
 	if {[regexp {^-(.*)} $defaultConfig - defaultConfig]} {set okIfNoDefaultConfig 1}
-	lappend optDesc [list -config.arg $defaultConfig "Файл конфигурации"]
-	lappend optDesc {-dry-run "Не выполнять команды, меняющие ситуацию, а только показывать их"}
-	lappend optDesc {-debug "Показывать отладочный вывод"}
-	array set ::opt [::cmdline::getoptions ::argv $optDesc $usage]
+	lappend optDesc [list --config $defaultConfig "Файл конфигурации"]
+	array set ::opt [parseOptions ::argv $optDesc $usage]
 	::log::lvSuppressLE emergency 0
 	if {!$::opt(-debug)} {::log::lvSuppress debug}
 	if {$::opt(-dry-run)} {set ::dryRun 1}
