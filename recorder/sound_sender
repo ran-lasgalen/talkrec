@@ -22,23 +22,23 @@ proc rereadConfig {} {
 }
 
 proc readConfig {configFile} {
-    set conf [readDict $configFile]
+    set conf [dict merge $::paths [readDict $configFile]]
     set errors {}
     if {![dict exists $conf user]} {lappend errors "не указано имя пользователя для rsync (ключ user)"}
     if {![dict exists $conf password]} {lappend errors "не указан пароль для rsync (ключ password)"}
     if {![dict exists $conf server]} {lappend errors "не указан сервер распознавания (ключ server)"}
     if {[llength $errors] > 0} {error [listOfErrors "Ошибки при чтении файла конфигурации $configFile" $errors]}
-    if {![dict exists $conf workdir]} {
+    if {![dict exists $conf talks]} {
 	set wd [file normalize .]
-	::log::log notice "рабочая папка (ключ workdir) не указана, установлена в $wd"
-	dict set conf workdir $wd
+	::log::log notice "рабочая папка (ключ talks) не указана, установлена в $wd"
+	dict set conf talks $wd
     }
     return $conf
 }
 
 proc runQueue {} {
     rereadConfig
-    set soundFiles [glob -nocomplain -directory [file normalize [dict get $::config workdir]] *.wav]
+    set soundFiles [glob -nocomplain -directory [file normalize [dict get $::config talks]] *.wav]
     foreach soundFile [lsort $soundFiles] {sendSound $soundFile}
     after 12000 runQueue
 }

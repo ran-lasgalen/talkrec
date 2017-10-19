@@ -186,7 +186,7 @@ proc watchRecorder {intentList pipe} {
     # в stdout ничего интересного от программы не ждем
     read $pipe
     if {[eof $pipe]} {
-	set resultFile [file join [file normalize [dict get $::config workdir]] [genRecordFileName $intentList]]
+	set resultFile [file join [file normalize [dict get $::config talks]] [genRecordFileName $intentList]]
 	if {[catch {close $pipe} err] && $::recordState(state) ne "stopping"} {
 	    # если stopping, то ошибка ожидаемая, ибо kill
 	    # а тут реальная ошибка
@@ -266,7 +266,7 @@ proc doIntended {} {
     }
     if {$::recordState(state) ne "ready" ||
 	$::intent(mode) eq "forbid"} return
-    set ::record(file) [file join [file normalize [dict get $::config workdir]] current.wav]
+    set ::record(file) [file join [file normalize [dict get $::config talks]] current.wav]
     if {[catch doStartRecord err]} {
 	setErrorState $err
     } else {
@@ -388,9 +388,9 @@ proc checkWorkHoursLoop {} {
 }
 
 proc readConfig {file} {
-    set defaultConfig [dict create recorderPort 17119 workdir . soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460 auto [dict create autoMode silence aboveDuration 0.5 aboveLevel 0.1% belowDuration 10.0 belowLevel 2%] workHours "10 21"]
+    set defaultConfig [dict create recorderPort 17119 talks ~/talks soundSystem pulse deviceRE input.usb-GN_Netcom_A_S_Jabra_PRO_9460 auto [dict create autoMode silence aboveDuration 0.5 aboveLevel 0.1% belowDuration 10.0 belowLevel 2%] workHours "10 21"]
     set readConfig [readDict $file]
-    set config [dict merge $defaultConfig $readConfig]
+    set config [dict merge $defaultConfig $::paths $readConfig]
     set errors [checkDict $config {
 	{headset "номер гарнитуры" {^\d+$}}
     }]
@@ -417,7 +417,7 @@ proc readConfig {file} {
     }
     if {[llength $errors] > 0} {error [listOfErrors "Ошибки конфигурации" $errors]}
     set ::config $config
-    file mkdir [dict get $::config workdir]
+    file mkdir [dict get $::config talks]
 }
 
 proc main {} {

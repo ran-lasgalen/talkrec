@@ -107,6 +107,8 @@ proc getOptions {defaultConfig optionsDesc {usage "options"}} {
 	if {[file pathtype $::opt(-config)] ne "absolute"} {
 	    set ::opt(-config) [file normalize $::opt(-config)]
 	}
+	set ::paths [dict create]
+	catchDbg {set ::paths [readDict [configDictFile paths]]} 
     } on error {err dbg} {
 	debugStackTrace $dbg
 	puts stderr $err
