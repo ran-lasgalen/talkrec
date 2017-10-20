@@ -1,0 +1,12 @@
+[Unit]
+Description=temporary very simple web server showing results
+AssertPathExists=$serverBin/show-results.tcl
+
+[Service]
+WorkingDirectory=~
+ExecStart=$serverBin/show-results.tcl
+RestartSec=12
+Restart=always
+
+[Install]
+WantedBy=default.target

@@ -1,9 +1,10 @@
 [Unit]
-AssertPathExists=/home/user/talkrec/server/talkrec-feeder
+Description=feeder of sound to Yandex SpeechkitBox
+AssertPathExists=$serverBin/talkrec-feeder
 
 [Service]
 WorkingDirectory=~
-ExecStart=/home/user/talkrec/server/talkrec-feeder
+ExecStart=$serverBin/talkrec-feeder
 
 [Install]
 WantedBy=default.target
