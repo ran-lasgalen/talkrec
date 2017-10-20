@@ -371,3 +371,8 @@ proc simpleDictToJSON {dict indented} {
     }
     ::json::write object {*}$object
 }
+
+proc substFromDict {dictAi1ciemu textAi1ciemu} {
+    dict for {kAi1ciemu vAi1ciemu} $dictAi1ciemu {set $kAi1ciemu $vAi1ciemu}
+    subst -nobackslashes -nocommands $textAi1ciemu
+}
