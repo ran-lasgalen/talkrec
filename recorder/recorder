@@ -116,6 +116,10 @@ proc serveCmd {chan} {
 		    }
 		}
 	    }
+	    {^\s*setError\s+(.*)} {
+		setErrorState [lindex $matches 1]
+		tellState $chan $replyId
+	    }
 	    default {
 		tellErrors $chan $replyId [list "Неизвестная команда: $cmd"]
 	    }
