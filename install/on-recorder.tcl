@@ -69,12 +69,7 @@ proc main {} {
 }
 
 proc enableLinger {} {
-    if {[catch {readFile [list | loginctl show-user $::tcl_platform(user)]} showUser]} {
-	set lingerEnabled 0
-    } else {
-	set lingerEnabled [regexp Linger=yes $showUser]
-    }
-    if {!$lingerEnabled} {sudoWithPw loginctl enable-linger $::tcl_platform(user)}
+    if {![lingerEnabled]} {sudoWithPw loginctl enable-linger $::tcl_platform(user)}
 }
 
 try {main} on error {err dbg} {debugStackTrace $dbg; puts stderr "\n$err"; exit 2}
