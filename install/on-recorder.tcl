@@ -25,7 +25,7 @@ proc main {} {
     set serviceDir [file normalize ~/.config/systemd/user]
     run file mkdir $serviceDir
     # доставляем нужные пакеты (кроме nodm, его потом отдельно)
-    set debs [debsYetToInstall {tcl tcllib tk bwidget rsync psmisc adduser sox pulseaudio pulseaudio-utils spectrwm}]
+    set debs [debsYetToInstall {tcl tcllib tk bwidget rsync psmisc adduser sox pulseaudio pulseaudio-utils spectrwm x11vnc}]
     if {[llength $debs] > 0} {sudoWithPw apt-get install --yes {*}$debs}
     if {"audio" ni [readFile {| groups}]} {sudoWithPw adduser $::tcl_platform(user) audio}
     # втягиваем скрипты
