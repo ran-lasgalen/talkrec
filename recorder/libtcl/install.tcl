@@ -34,6 +34,15 @@ proc sudoWithPw {args} {
     }
 }
 
+proc lingerEnabled {} {
+    try {
+	regexp Linger=yes [readFile [list | loginctl show-user $::tcl_platform(user)]]
+    } on error {err dbg} {
+	debugStackTrace $dbg
+	error "loginctl не работает, включить Linger не получится"
+    }
+}
+
 proc readPassword {prompt} {
     try {
 	catch {exec stty -echo}
