@@ -197,13 +197,13 @@ proc runExec {args} {run exec {*}$args >@ stdout 2>@ stderr}
 proc findExecutable {bin} {
     set PATH [split $::env(PATH) :]
     foreach bindir {/usr/local/bin /usr/local/sbin /bin /usr/bin /sbin /usr/sbin} {
-	if {[lsearch -exact $PATH $bindir] < 0} {lappend PATH $bindir}
+	if {$bindir ni $PATH} {lappend PATH $bindir}
     }
     foreach bindir $PATH {
 	set fullbin [file join $bindir $bin]
 	if {[file executable $fullbin]} {return $fullbin}
     }
-    return {}
+    error "findExecutable: исполнимый файл $bin не найден ни в одной из папок\n[join $PATH {, }]"
 }
 
 proc readFile {file} {
