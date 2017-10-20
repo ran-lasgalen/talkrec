@@ -17,9 +17,9 @@ proc main {} {
     set talkrecDir [file normalize ~/talkrec]
     set ::scriptDir [file join $talkrecDir recorder]
     file mkdir $::scriptDir
-    set ::talks [file normalize ~/talks]
-    set paths [dict create talks $::talks scripts $::scriptDir]
-    createFileViaTmp [file join $::configDir paths.json] [simpleDictToJSON $paths 1]
+    if {![dict exists $::paths talks]} {dict set ::paths talks [file normalize ~/talks]}
+    if {![dict exists $::paths recorderBin]} {dict set ::paths recorderBin $::scriptDir}
+    createFileViaTmp [configFile paths.json] [simpleDictToJSON $::paths 1]
     # обеспечиваем работу systemd с юзерскими конфигами
     enableLinger
     set serviceDir [file normalize ~/.config/systemd/user]
