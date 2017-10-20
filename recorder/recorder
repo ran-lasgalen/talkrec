@@ -204,11 +204,11 @@ proc watchRecorder {intentList pipe} {
 	    # если stopping, то ошибка ожидаемая, ибо kill
 	    # а тут реальная ошибка
 	    # stderr оставляем для разборок
-	    set msg "Error while recording"
+	    set msg "Ошибка при записи"
 	    if {[file exists $::record(file)] &&
 		[file size $::record(file)] > 0 &&
 		![catch {file rename -- $::record(file) $resultFile}]} {
-		append msg " to $resultFile"
+		append msg " в $resultFile"
 	    }
 	    catch {
 		set fh [open $::record(file).stderr a]
@@ -217,14 +217,15 @@ proc watchRecorder {intentList pipe} {
 		file rename -- $::record(file).stderr $resultFile.stderr
 	    }
 	    if {[file exists $resultFile.stderr]} {
-		append msg "\nsee $resultFile.stderr for possible debugging help"
+		append msg "\nподробности в $resultFile.stderr"
 	    }
 	    safelog {error $msg}
 	} else {
 	    # успешное завершение
 	    catch {run file delete -- $::record(file).stderr}
 	    if {[file exists $::record(file)] &&
-		[file size $::record(file)] > 100} {
+		[file size $::record(file)] > 20000} {
+		# 20000 - это примерно 0.6 с
 		try {
 		    run file rename -- $::record(file) $resultFile
 		    array set intent $intentList
@@ -235,13 +236,13 @@ proc watchRecorder {intentList pipe} {
 			     [dict merge \
 				  [dict filter $intentList key employeeId name siteId] \
 				  $autoParams]]
-		    safelog {info "Finished $resultFile"}
+		    safelog {info "Завершен $resultFile"}
 		} on error {err dbg} {
 		    debugStackTrace $dbg
-		    safelog {error "Error saving information for $resultFile:\n  $err"}
+		    safelog {error "Ошибка сохранения данных для $resultFile:\n  $err"}
 		}
 	    } else {
-		safelog {info "$::record(file) too small, ignoring"}
+		safelog {info "$::record(file) слишком маленький, игнорируем"}
 	    }
 	}
 	unset -nocomplain ::record ::recordState(recordTime)
