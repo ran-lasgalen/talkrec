@@ -59,7 +59,7 @@ proc main {} {
     runExec {*}[concat [sshToStation ./$installRecorder --sudo-pw $::sudoPassword] $dbgarg]
     file delete -force -- $::installerDir
     runExec sleep 1
-    runExec {*}[sshToStation systemctl --user restart recorder]
+    #runExec {*}[sshToStation systemctl --user restart recorder]
 }
 
 proc genEmployeesConfig {siteId} {

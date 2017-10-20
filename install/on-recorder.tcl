@@ -25,13 +25,17 @@ proc main {} {
     set serviceDir [file normalize ~/.config/systemd/user]
     run file mkdir $serviceDir
     # доставляем нужные пакеты (кроме nodm, его потом отдельно)
-    set debs [debsYetToInstall {tcl tcllib tk bwidget rsync psmisc sox pulseaudio pulseaudio-utils spectrwm}]
+    set debs [debsYetToInstall {tcl tcllib tk bwidget rsync psmisc adduser sox pulseaudio pulseaudio-utils spectrwm}]
     if {[llength $debs] > 0} {sudoWithPw apt-get install --yes {*}$debs}
+    if {"audio" ni [readFile {| groups}]} {sudoWithPw adduser $::tcl_platform(user) audio}
     # втягиваем скрипты
     runExec rsync -av --delete rsync://$serverAddr:8873/recorder/ $::scriptDir
     foreach oldFile {recorder.yaml record_manager.yaml employees.yaml recorder.tcl sound_sender.yaml sound_sender.bash} {file delete -- [file join $::configDir $oldFile]}
     # отстреливаем, если кто работал
     catchDbg {runExec killall demo_run recorder sound_sender record_manager}
+    # перезапускаем pulseaudio, чтобы отцепить от иксов
+    catchDbg {runExec pulseaudio --kill}
+    runExec pulseaudio --start
     # настраиваем запуск recorder и sound_sender
     set services {recorder sound_sender}
     foreach service $services {
