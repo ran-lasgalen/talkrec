@@ -208,14 +208,14 @@ proc findExecutable {bin} {
 
 proc readFile {file} {
     set fh [run open $file r]
-    set res [run read $fh]
+    set res [run read -nonewline $fh]
     run close $fh
     return $res
 }
 
 proc readFile! {file} {
     set fh [open $file r]
-    try { read $fh } finally { close $fh }
+    try { read -nonewline $fh } finally { close $fh }
 }
 
 proc createFileViaTmp {filename chanvarOrContent args} {
