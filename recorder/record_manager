@@ -383,12 +383,11 @@ proc updateWidgetsForEmployee {employeeId headset} {
 		$recordButton configure -background red -state normal -text "Сбросить" -command [list clearErrorOnHeadset $headset $recordButton]
 	    }
 	    default {
-		# В том числе error
 		$stateLabel configure -text "Ошибка"
 		$recordButton configure -background red -state disabled -text "" -command {}
 	    }
 	}
-	if {$mode eq "forbid"} {
+	if {$mode eq "forbid" && $state ne "error"} {
 	    # mode forbid возможно только если станция есть и гарнитуру видит,
 	    # поэтому тут не смотрим на то, есть ли гарнитура
 	    $recordButton configure -background red -state disabled -text "Запрещена" -command {}
