@@ -58,6 +58,13 @@ proc serveCmd {chan} {
 	    {^\s*state\M} {tellState $chan $replyId}
 	    {^internals$} {puts $chan [list $replyId ::record [array get ::record] ::config $::config]}
 	    {^\s*clearError\s*$} {
+		# Иногда после отваливания иксов pulseaudio входит в ступор. Вроде прибить помогает.
+		# Запустит потом само.
+		catchDbg {
+		    switch [dict get $::config soundSystem] {
+			pulse {run exec pulseaudio --kill}
+		    }
+		}
 		if {$::recordState(state) eq "error"} {
 		    set ::recordState(state) restart
 		    unset -nocomplain ::recordState(errorMessage)
