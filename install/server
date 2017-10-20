@@ -42,7 +42,7 @@ proc main {} {
 	lappend services $sf
 	createFileViaTmp [file join $systemdDir $sf] [substFromDict $substs [readFile $se]]
     }
-    set needDebs {tcl8.6 tcllib tcl8.6-tdbc-postgres postgresql rsync}
+    set needDebs {tcl8.6 tcllib tcl8.6-tdbc-postgres postgresql rsync sshpass}
     catch {if {![file executable [dict get $::config asrclient]]} {dict unset ::config asrclient}}
     if {![dict exists $::config asrclient]} {
 	catch {dict set ::config asrclient [findExecutable asrclient-cli.py]}
