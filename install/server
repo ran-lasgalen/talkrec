@@ -1,0 +1,81 @@
+#!/usr/bin/tclsh
+set ::scriptDir [file dirname [file normalize [info script]]]
+set ::libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
+source [file join $libtcldir install.tcl]
+
+proc main {} {
+    set myConfigFile [configFile server-install.json]
+    getOptions -$myConfigFile {}
+    set talkrecDir [file dirname $::scriptDir]
+    set systemdDir ~/.config/systemd/user
+    file mkdir $::configDir $systemdDir
+    file attributes $::configDir -permissions 0700
+    if {![dict exists $::paths serverBin]} {
+	dict set ::paths serverBin [file normalize [file join $talkrecDir server]]
+    }
+    set serverBin [dict get $::paths serverBin]
+    if {![dict exists $::paths recorderBin]} {
+	dict set ::paths recorderBin [file normalize [file join $talkrecDir recorder]]
+    }
+    if {![dict exists $::paths queue]} {
+	dict set ::paths queue [file normalize ~/queue]
+    }
+    foreach d {serverBin recorderBin} {
+	if {![file isdirectory [dict get $::paths $d]]} {error "$d [dict get $::paths $d] - не папка"}
+    }
+    createFileViaTmp [configFile paths.json] [simpleDictToJSON $::paths 1]
+    foreach d {sound_archive problematic} {
+	file mkdir [file join [dict get $::paths queue] $d]
+    }
+    set substs [dict merge [dict create configDir $::configDir] $::paths]
+    set rsyncdSecrets [configFile rsyncd.secrets]
+    if {![file exists $rsyncdSecrets]} {close [open $rsyncdSecrets a]}
+    file attributes $rsyncdSecrets -permissions 0600
+    createFileViaTmp [configFile rsyncd.conf] [substFromDict $substs [readFile [file join $serverBin example rsyncd.conf]]]
+    set serviceExamples [glob -directory [file join $serverBin example] *.service]
+    set services {}
+    foreach se $serviceExamples {
+	set sf [file tail $se]
+	lappend services $sf
+	createFileViaTmp [file join $systemdDir $sf] [substFromDict $substs [readFile $se]]
+    }
+    set needDebs {tcl8.6 tcllib tcl8.6-tdbc-postgres postgresql rsync}
+    catch {if {![file executable [dict get $::config asrclient]]} {dict unset ::config asrclient}}
+    if {![dict exists $::config asrclient]} {
+	catch {dict set ::config asrclient [findExecutable asrclient-cli.py]}
+    }
+    if {![dict exists $::config asrclient]} {
+	lappend needDebs python2.7 python-setuptools python-pip protobuf-compiler git
+    }
+    set debs [debsYetToInstall $needDebs]
+    if {[llength $debs] > 0} {runExec sudo apt-get install --yes {*}$debs}
+    # Потоковый фидер; инструкция из python/README.md из его исходников, выкачиваемых ниже
+    if {![dict exists $::config asrclient]} {
+	set startdir [file normalize .]
+	set skcdir [file normalize ~/speechkitcloud]
+	if {![file isdirectory $skcdir]} {
+	    runExec git clone https://github.com/yandex/speechkitcloud $skcdir
+	}
+	run cd $skcdir/python
+	set protofiles [glob -nocomplain asrclient/*.proto]
+	if {[llength $protofiles] > 0} {
+	    runExec protoc -I=asrclient --python_out=asrclient {*}$protofiles
+	}
+	runExec python ./setup.py sdist
+	run cd dist
+	runExec sudo pip install [lindex [lsort -decreasing -dictionary [glob -nocomplain asrclient-*.tar.gz]] 0]
+	run cd $startdir
+	if {!$::dryRun} {dict set ::config asrclient [findExecutable asrclient-cli.py]}
+    }
+    createFileViaTmp $myConfigFile [simpleDictToJSON $::config 1]
+    if {![lingerEnabled]} {runExec loginctl enable-linger $::tcl_platform(user)}
+    runExec systemctl --user daemon-reload
+    foreach service $services {
+	runExec systemctl --user enable $service
+	catchDbg {runExec systemctl --user stop $service}
+	runExec systemctl --user start $service
+    }
+}
+
+try {main} on error {err dbg} {debugStackTrace $dbg; puts stderr $err; exit 2}
