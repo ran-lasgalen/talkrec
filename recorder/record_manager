@@ -298,6 +298,16 @@ proc forbidRecordOnHeadset {headset button} {
     }
 }
 
+proc clearErrorOnHeadset {headset button} {
+    if {$button ne ""} {$button configure -state disabled -command {}}
+    if {![setIfExists ::availableHeadsets($headset) peer]} return
+    if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
+    set request [list [nextCommandId] clearError]
+    if {[sendRequest $chan $request]} {
+	#debug "Sent request to $chan: $request"
+    }
+}
+
 proc formatRecordTime {time} {
     set h [expr {$time / 3600}]
     set m [expr {$time % 3600 / 60}]
