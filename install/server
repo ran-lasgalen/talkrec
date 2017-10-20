@@ -7,6 +7,8 @@ source [file join $libtcldir install.tcl]
 proc main {} {
     set myConfigFile [configFile server-install.json]
     getOptions -$myConfigFile {}
+    set ::config {}
+    if {[file exists $myConfigFile]} {set ::config [readDict $myConfigFile]}
     set talkrecDir [file dirname $::scriptDir]
     set systemdDir ~/.config/systemd/user
     file mkdir $::configDir $systemdDir
