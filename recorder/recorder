@@ -162,7 +162,9 @@ proc doStartRecord {} {
 		    }
 		}
 	    }
-	    set pipeCmd [list | sox -r 16000 -b 16 -c 1 -t s16 "|parec --rate=16000 --channels=1 --device=$::record(device)" $::record(file) {*}$params 2> $::record(file).stderr]
+	    run exec pactl set-default-source $::record(device) 2> $::record(file).stderr
+	    set pipeCmd [list | rec -q -r 16000 -b 16 -c 1 $::record(file) {*}$params 2> $::record(file).stderr]
+	    #set pipeCmd [list | sox -r 16000 -b 16 -c 1 -t s16 "|parec --rate=16000 --channels=1 --device=$::record(device)" $::record(file) {*}$params 2> $::record(file).stderr]
 	    #set ::record(pid) [run exec parecord --rate=16000 --channels=1 --device=$::record(device) $::record(file) 2> $::record(file).stderr &]
 	    set ::record(pipe) [run open $pipeCmd r]
 	    if {$::dryRun} {
