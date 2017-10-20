@@ -62,6 +62,7 @@ proc main {} {
     if {"nodm" in $debs} {
 	createFileViaTmp [file join $::installerDir nodm.preseed] "nodm nodm/enabled boolean true\nnodm nodm/user string user"
 	sudoWithPw debconf-set-selections [file join $::installerDir nodm.preseed]
+	catchDbg {runExec sudo service lightdm stop}
 	catchDbg {runExec sudo apt-get remove --yes lightdm}
 	runExec sudo apt-get install --yes {*}$debs
     }
