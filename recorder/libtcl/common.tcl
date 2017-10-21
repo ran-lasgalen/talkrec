@@ -376,3 +376,15 @@ proc substFromDict {dictAi1ciemu textAi1ciemu} {
     dict for {kAi1ciemu vAi1ciemu} $dictAi1ciemu {set $kAi1ciemu $vAi1ciemu}
     subst -nobackslashes -nocommands $textAi1ciemu
 }
+
+proc runMain {{script main}} {
+    if {[info exists ::dontRun] && $::dontRun} {
+	puts "Don't run"
+    } else {
+	try $script on error {err dbg} {
+	    debugStackTrace $dbg
+	    puts stderr $err
+	    exit 2
+	}
+    }
+}
