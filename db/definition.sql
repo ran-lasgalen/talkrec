@@ -331,11 +331,26 @@ ALTER TABLE ONLY site
 
 
 --
+-- Name: talk_filename_key; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
+--
+
+ALTER TABLE ONLY talk
+    ADD CONSTRAINT talk_filename_key UNIQUE (filename);
+
+
+--
 -- Name: talk_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: 
 --
 
 ALTER TABLE ONLY talk
     ADD CONSTRAINT talk_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: talk_made_on_started_at_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: 
+--
+
+CREATE INDEX talk_made_on_started_at_idx ON talk USING btree (made_on, started_at);
 
 
 --
