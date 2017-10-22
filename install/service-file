@@ -1,0 +1,38 @@
+#!/usr/bin/tclsh
+set ::scriptDir [file dirname [file normalize [info script]]]
+set ::libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
+source [file join $libtcldir install.tcl]
+
+proc main {} {
+    set myConfigFile [configFile server-install.json]
+    getOptions -$myConfigFile {}
+    set ::config {}
+    if {[file exists $myConfigFile]} {set ::config [readDict $myConfigFile]}
+    set talkrecDir [file dirname $::scriptDir]
+    set systemdDir ~/.config/systemd/user
+    file mkdir $systemdDir
+    if {![dict exists $::paths serverBin]} {
+	dict set ::paths serverBin [file normalize [file join $talkrecDir server]]
+    }
+    if {![dict exists $::paths recorderBin]} {
+	dict set ::paths recorderBin [file normalize [file join $talkrecDir recorder]]
+    }
+    if {![dict exists $::paths queue]} {
+	dict set ::paths queue [file normalize ~/queue]
+    }
+    set substs [dict merge [dict create configDir $::configDir] $::paths]
+    foreach se $::argv {
+	set sf [file tail $se]
+	lappend services $sf
+	createFileViaTmp [file join $systemdDir $sf] [substFromDict $substs [readFile $se]]
+    }
+    runExec systemctl --user daemon-reload
+    foreach service $services {
+	runExec systemctl --user enable $service
+	catchDbg {runExec systemctl --user stop $service}
+	runExec systemctl --user start $service
+    }
+}
+
+runMain
