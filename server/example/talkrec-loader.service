@@ -1,0 +1,10 @@
+[Unit]
+Description=loader of recognized texts to database
+AssertPathExists=$serverBin/talkrec-loader
+
+[Service]
+WorkingDirectory=~
+ExecStart=$serverBin/talkrec-loader
+
+[Install]
+WantedBy=default.target
