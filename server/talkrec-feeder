@@ -7,7 +7,6 @@ proc main {} {
     getOptions [configDictFile dispatcher] {}
     if {![rereadConfig]} {exit 2}
     set ::serverState {}
-    file mkdir [dict get $::config queue]
     runChecks
     after 1000 runQueue
     cleanFlagWait
@@ -43,6 +42,9 @@ proc readConfig {configFile} {
 	lappend errors "не указан путь к потоковому загрузчику (asrclient)"
     }
     if {[llength $errors] > 0} {error [listOfErrors "" $errors]}
+    set soundArchive [file join [dict get $conf queue] sound_archive]
+    if {![file isdirectory $soundArchive]} {file mkdir $soundArchive}
+    set ::soundArchive $soundArchive
     set ::config $conf
     set ::speechkits $sksf
 }
@@ -101,7 +103,7 @@ proc getRecognition {soundFile server pipe} {
 		lappend lines "recordTime: $duration"
 		createFileViaTmp $soundFile.yaml [join $lines "\n"]
 	    }
-	    catch {run file delete -- $soundFile}
+	    catchDbg {run file rename -- $soundFile $::soundArchive}
 	    safelog {info "$soundFile -> $soundFile.text"}
 	}
     }
@@ -109,6 +111,16 @@ proc getRecognition {soundFile server pipe} {
 
 proc runQueue {} {
     rereadConfig
+    # Чистим архив от старых файлов
+    set now [clock seconds]
+    foreach arcFile [glob -nocomplain -directory $::soundArchive] {
+	catchDbg {
+	    if {$now - [file mtime $arcFile] > 2592000} {
+		run file delete -- $arcFile
+	    }
+	}
+    }
+    # Пишем отчет о состоянии
     catchDbg {
 	set reportFile [file join [dict get $::config queue] report]
 	set report [reportServerState]
@@ -117,6 +129,7 @@ proc runQueue {} {
 	close $h
 	file rename -force -- $reportFile.tmp $reportFile
     }
+    # Обрабатываем очередь
     set flagFiles [glob -nocomplain -directory [file normalize [dict get $::config queue]] *.flag]
     foreach flagFile [lsort $flagFiles] {
 	set soundFile [file rootname $flagFile]
