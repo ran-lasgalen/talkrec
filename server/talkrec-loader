@@ -1,0 +1,117 @@
+#!/usr/bin/tclsh
+
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
+package require tdbc
+package require tdbc::postgres
+
+proc main {} {
+    getOptions [configDictFile dispatcher] {}
+    importAllLoop
+    vwait forever
+}
+
+proc importAllLoop {} {
+    if {[catch importAll err dbg]} {
+	debugStackTrace $dbg
+	safelog {error $err}
+	after 10000 importAll
+    } else {
+	after 1000 importAll
+    }
+}
+
+proc importAll {} {
+    set ::siteIdMap [dict create]
+    set ::empIdMap [dict create]
+    catchDbg {
+	set d [readDict [configDictFile site-emp-maps]]
+	catchDbg {set ::siteIdMap [dict get $d siteMap]}
+	catchDbg {set ::empIdMap [dict get $d employeeMap]}
+    }
+    set ::config [dict merge {database talkrec} $::paths [readDict $::opt(-config)]]
+    set ::queue [dict get $::config queue]
+    set problemsDir [file join $::queue problematic]
+    file mkdir $problemsDir
+    set loadedDir [file join $::queue loaded]
+    file mkdir $loadedDir
+    set now [clock seconds]
+    foreach dir {$problemsDir $loadedDir} {
+	foreach textFile [glob -nocomplain -directory $dir *.text] {
+	    catchDbg {
+		if {$now - [file mtime $textFile] > 2592000} {
+		    run file delete -- {*}[glob [file rootname $textFile]*]
+		}
+	    }
+	}
+    }
+    ::tdbc::postgres::connection create db -database [dict get $::config database]
+    try {
+	foreach textFile [lsort [glob -nocomplain -directory $::queue *.text]] {
+	    if {[file exists [lindex $::argv 0]]} {set textFile [lindex $::argv 0]}
+	    if {[catch {importText $textFile} err dbg]} {
+		debugStackTrace $dbg
+		safelog {error "Ошибка импорта $textFile:\n  $err"}
+		catchDbg {run file rename -- {*}[glob [file rootname $textFile]*] $problemsDir}
+	    } else {
+		catchDbg {run file rename -- {*}[glob [file rootname $textFile]*] $loadedDir}
+	    }
+	}
+    } finally {db close}
+}
+
+proc importText {textFile} {
+    if {![regexp {^(\d\d\d\d)(\d\d)(\d\d)_(\d\d)(\d\d)(\d\d)([+-]\d+)?_(?:site)?(\d+)_(\d+)(?:_([0-9a-f]+))\.} [file tail $textFile] - y m d H M S tz siteId headset timestampS]} {
+	error "имя не разделяется на информацию о файле"
+    }
+    set date "$y-$m-$d"
+    set localtime "$H:$M:$S"
+    if {$tz eq ""} {
+	if {$timestampS eq ""} {error "в имени должно быть либо абсолютное время, либо таймзона"}
+	if {[regexp {^[0-9a-f]{8}$} $timestampS] || [regexp {[a-f]} $timestampS]} {
+	    set timestamp [format %d 0x$timestampS]
+	} else {
+	    set timestamp $timestampS
+	}
+	set tz [clock format $timestamp -format %z]
+    }
+    set timestamptz "$date $localtime$tz"
+    catch {set siteId [dict get $::siteIdMap $siteId]}
+    set text [regsub -all {\s+} [string trim [readFile $textFile]] " "]
+    if {[regexp {^\s*$} $text]} {
+	safelog {info "$textFile пустой"}
+	return
+    }
+    if {[catch {readDict [dictFile [file rootname $textFile]]} meta]} {
+	error "не найден или некорректен файл с метаинформацией"
+    }
+    catch {dict set meta employeeId [dict get $::empIdMap [dict get $meta employeeId]]}
+    dict unset meta siteId
+    foreach var {employeeId name recordTime} {
+	catch {set $var [dict get $meta $var]}
+	dict unset meta $var
+    }
+    if {![info exists employeeId]} {error "не обнаружен ключ сотрудника"}
+    set filename [file rootname [file tail $textFile]]
+    set nameRows [db allrows -as lists {select name from employee where id = :employeeId}]
+    if {![llength $nameRows]} {error "В базе данных нет сотрудника с ключом $employeeId"}
+    if {[info exists name]} {
+	set metaName [string trim $name]
+	set dbName [string trim [lindex $nameRows 0 0]]
+	if {$dbName ne "" && $metaName ne "" && $dbName ne $metaName} {
+	    dict set meta problem "Имя из информации о записи ($metaName) и из базы данных ($dbName) не совпадают"
+	    unset employeeId
+	}
+    }
+    if {![llength [db allrows -as lists {select name from site where id = :siteId}]]} {
+	error "В базе данных нет салона с ключом $siteId"
+    }
+    set existingRows [db allrows -as lists {select id from talk where filename = :filename}]
+    if {[llength $existingRows]} {
+	error "Файл $filename уже внесен в базу данных, ключ: [lindex $existingRows 0 0]"
+    }
+    set extra [simpleDictToJSON $meta 0]
+    db allrows -as lists {insert into talk (talk, started_at, made_on, duration, employee_id, site_id, headset, filename, extra) values (:text, :timestamptz, :date, :recordTime, :employeeId, :siteId, :headset, :filename, :extra) returning id}
+}
+
+runMain
