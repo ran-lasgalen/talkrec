@@ -2,6 +2,8 @@
 
 set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
 source [file join $libtcldir common.tcl]
+package require tdbc
+package require tdbc::postgres
 
 set ::sites [dict create]
 set ::siteIdMap [dict create]
@@ -49,6 +51,75 @@ proc htmlEscape {text} {
 	regsub -all $re $res $sub res
     }
     return $res
+}
+
+proc showRecords {{date {}}} {
+    ::tdbc::postgres::connection create db -database talkrec
+    try {
+	if {$date eq ""} {set date [lindex [db allrows -as lists {select max(made_on) from talk}] 0 0]}
+	if {$date eq ""} {set content "<p>Пока записей в базе данных нет</p>"} else {
+	    set content ""
+	    set prevdates [lindex [db allrows -as lists {select max(made_on) from talk where made_on < :date}] 0]
+	    set nextdates [lindex [db allrows -as lists {select min(made_on) from talk where made_on > :date}] 0]
+	    set prevnext [concat $prevdates $nextdates]
+	    if {[llength $prevnext]} {
+		append content "<div class=\"prevnext\">"
+		foreach d $prevnext {append content "<a href=\"/$d\">$d</a>&nbsp;&nbsp;&nbsp;&nbsp;"}
+		append content "</div>\n"
+	    }
+	    set records [db allrows {select talk.*, employee.name as ename, site.name as sname from talk left outer join site on talk.site_id = site.id left outer join employee on talk.employee_id = employee.id where made_on = :date order by started_at}]
+	    if {[llength $records]} {
+		foreach record $records {
+		    if {[catch {showRecord $record} html dbg]} {
+			debugStackTrace $dbg
+			append content "<div class=\"error\">ошибка форматирования записи [htmlEscape $record]: $html</div>\n"
+		    } else {
+			append content "$html\n"
+		    }
+		}
+	    } else {
+		append content "<p>Записей за $date не обнаружено</p>"
+	    }
+	}
+    } finally { catchDbg {db close} }
+    set title [clock format [clock seconds] -format "Результаты распознавания за $date на %H:%M:%S %d.%m.%Y"]
+    return "<html><head><title>$title</title></head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
+}
+
+proc showRecord {record} {
+    set content "<div class=\"record\">\n"
+    set title {}
+    catch {
+	set startedAt [dict get $record started_at]
+	catch {set startedAt [clock format [clock scan $startedAt -format "%Y-%m-%d %H:%M:%S%z"] -format "%H:%M:%S %d.%m.%Y"]}
+    }
+    if {[dict exists $record id]} {
+	lappend title "запись №[dict get $record id]"
+    } else {
+	lappend title "запись без номера"
+    }
+    if {[info exists startedAt]} {
+	lappend title $startedAt
+    }
+    if {[dict exists $record sname]} {
+	lappend title [htmlEscape [dict get $record sname]]
+    } elseif {[dict exists $record site_id]} {
+	lappend title "салон №[dict get $record site_id]"
+    }
+    if {[dict exists $record ename]} {
+	lappend title "говорит [htmlEscape [dict get $record ename]]"
+    }
+    append content "<h3>[join $title {, }]:</h3>"
+    catchDbg {append content "<p>Текст: [htmlEscape [dict get $record talk]]</p>\n"}
+    if {[dict exists $record extra]} {
+	catchDbg {
+	    set extra [::json::json2dict [dict get $record extra]]
+	    if {[dict exists $extra problem]} {
+		append content "<p><i>[htmlEscape [dict get $extra problem]]</i></p>\n"
+	    }
+	}
+    }
+    append content "</div>"
 }
 
 proc showNewFiles {} {
@@ -118,19 +189,23 @@ proc withHTTP {text} {
 proc serveRequest {chan addr port} {
     fconfigure $chan -translation auto -buffering line
     set line [gets $chan]
-    switch -regexp $line {
+    switch -regexp -matchvar matches $line {
 	{ /report } {
 	    puts $chan [withHTTP [showReport]]
 	}
 	{ /queue } {
 	    puts $chan [withHTTP [showQueue]]
 	}
+	{ /(\d\d\d\d-\d\d-\d\d) } {
+	    puts $chan [withHTTP [showRecords [lindex $matches 1]]]
+	}
 	default {
-	    puts $chan [withHTTP [showNewFiles]]
+	    puts $chan [withHTTP [showRecords]]
 	}
     }
     close $chan
 }
 
+getOptions - {}
 socket -server serveRequest 8888
 vwait forever
