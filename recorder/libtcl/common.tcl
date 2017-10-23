@@ -440,7 +440,7 @@ proc asyncOnConnect {timeoutId onConnect connData} {
 }
 
 proc asyncDisconnect {connData reason {message ""}} {
-    after cancel [list asyncDisconnect $connData waitTimeout]
+    after cancel [list asyncDisconnect $connData replyTimeout]
     catchDbg [list uplevel #0 [dict get $connData onDisconnect] [list $connData $reason $message]]
     catch {close [dict get $connData chan]}
 }
