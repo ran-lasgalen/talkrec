@@ -388,3 +388,71 @@ proc runMain {{script main}} {
 	}
     }
 }
+
+# Выполняет script циклически через указанный интервал, начиная с прямо сейчас.
+# Скрипт может завершить этот цикл, выдав return -code break
+proc asyncLoop {tag intervalMs script} {
+    try {
+	uplevel #0 $script
+    } on error {err dbg} {
+	debugStackTrace $dbg
+	safelog {error "asyncLoop($tag): $err"}
+    } on break {} return
+    after $intervalMs [list asyncLoop $tag $intervalMs $script]
+}
+
+# onConnect - вызов функции без одного параметра. К нему добавляется connData
+#   и результат вызывается, когда установлено соединение.
+#
+# onDisconnect - вызов функции без трех параметров. К нему добавляются
+#   connData, reason и message, и результат вызывается при любом разрыве
+#   соединения. Он пишется в connData, и его потом вызывает asyncDisconnect.
+#   Закрывать канал в нем не надо, это сделает asyncDisconnect. Может быть
+#   пустой строкой.
+#
+# connData - dict с ключами
+#   chan - канал
+#   onDisconnect - завершающая обработка
+#   pass - passData
+#   host - host
+#   port - port
+#
+# timeoutMs - таймаут на СОЕДИНЕНИЕ. Таймаут на ожидание надо организовывать в
+#   onConnect и обработчике readable
+proc asyncConnect {host port timeoutMs passData onConnect onDisconnect} {
+    set sock [socket -async $host $port]
+    if {$onDisconnect eq ""} {set onDisconnect ignoreArgs}
+    set connData [dict create pass $passData host $host port $port chan $sock onDisconnect $onDisconnect]
+    set timeoutId [after $timeoutMs [list asyncDisconnect $connData connectTimeout]]
+    fileevent $sock writable [list asyncOnConnect $timeoutId $onConnect $connData]
+}
+
+proc asyncOnConnect {timeoutId onConnect connData} {
+    set chan [dict get $connData chan]
+    after cancel $timeoutId
+    fileevent $chan writable {}
+    fconfigure $chan -blocking 0
+    if {[catch [list uplevel #0 $onConnect [list $connData]] err dbg]} {
+	debugStackTrace $dbg
+	safelog {error "onConnect failed: $err\n  connData: $connData"}
+	asyncDisconnect $connData onConnectFailed $err
+    }
+}
+
+proc asyncDisconnect {connData reason {message ""}} {
+    after cancel [list asyncDisconnect $connData waitTimeout]
+    catchDbg [list uplevel #0 [dict get $connData onDisconnect] [list $connData $reason $message]]
+    catch {close [dict get $connData chan]}
+}
+
+proc chanHasError {chan var} {
+    upvar $var err
+    set err [fconfigure $chan -error]
+    if {$err ne ""} {
+	return 1
+    } else {
+	return 0
+    }
+}
+
+proc ignoreArgs {args} {}
