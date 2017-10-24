@@ -54,6 +54,10 @@ proc htmlEscape {text} {
 }
 
 proc showRecordStations {} {
+    if {[catch {md5OfDir [file dirname $::libtcldir]} myVersion]} {
+	safelog {error $myVersion}
+	set myVersion X
+    }
     ::tdbc::postgres::connection create db -database talkrec
     try {
 	set content "<table border=\"1\"><tbody>\n<tr><th>салон</th><th>IP</th><th>№</th><th>версия</th><th>состояние</th><th>на</th><th>смещение времени</th></tr>\n"
@@ -62,12 +66,15 @@ proc showRecordStations {} {
 	    foreach k {name ip headset version state state_at time_diff} {
 		if {$k in {state ip}} {
 		    switch [dictGetOr "" $row state] {
-			работает { set class " class=\"green\"" }
-			отключен { set class " class=\"brown\"" }
-			default { set class " class=\"red\"" }
+			работает { set class green }
+			отключен { set class brown }
+			default { set class red }
 		    }
+		} elseif {$k eq "version"} {
+		    if {[dictGetOr Y $row version] eq $myVersion} {set class green} {set class red}
 		} else {set class ""}
-		append content "<td$class>[dictGetOr {&nbsp;} $row $k]</td>"
+		if {$class eq ""} {set addclass ""} {set addclass " class=\"$class\""}
+		append content "<td$addclass>[dictGetOr {&nbsp;} $row $k]</td>"
 	    }
 	    append content "</tr>\n"
 	}
