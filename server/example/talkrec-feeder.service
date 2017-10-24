@@ -5,6 +5,8 @@ AssertPathExists=$serverBin/talkrec-feeder
 [Service]
 WorkingDirectory=~
 ExecStart=$serverBin/talkrec-feeder
+RestartSec=12
+Restart=always
 
 [Install]
 WantedBy=default.target
