@@ -7,21 +7,12 @@ package require tdbc::postgres
 
 proc main {} {
     getOptions [configDictFile dispatcher] {}
-    importAllLoop
+    asyncLoop importAllTexts 60000 importAllTexts
     vwait forever
 }
 
-proc importAllLoop {} {
-    if {[catch importAll err dbg]} {
-	debugStackTrace $dbg
-	safelog {error $err}
-	after 10000 importAllLoop
-    } else {
-	after 1000 importAllLoop
-    }
-}
-
-proc importAll {} {
+proc importAllTexts {} {
+    safelog {info "importAllTexts heartbeat"}
     set ::siteIdMap [dict create]
     set ::empIdMap [dict create]
     catchDbg {
