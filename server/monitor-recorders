@@ -13,8 +13,8 @@ proc main {} {
     set ::database [dictGetOr talkrec $::config database]
     array set ::hostState {}
     array set ::hostVersion {}
-    asyncLoop runHostChecks 10000 runHostChecks
-    after 8000 {asyncLoop fixHostCheckResults 8000 fixHostCheckResults}
+    asyncLoop runHostChecks 60000 runHostChecks
+    after 8000 {asyncLoop fixHostCheckResults 60000 fixHostCheckResults}
     vwait exit
 }
 
