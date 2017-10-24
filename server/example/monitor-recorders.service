@@ -1,8 +1,6 @@
 [Unit]
 Description=monitor of record stations
 AssertPathExists=$serverBin/monitor-recorders
-Requires=postgresql.service
-After=postgresql.service
 
 [Service]
 WorkingDirectory=~
