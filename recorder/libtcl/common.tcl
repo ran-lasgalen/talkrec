@@ -470,3 +470,18 @@ proc dictGetOr {dflt dict args} {
 	return $res
     }
 }
+
+proc parseRecorderReply {text} {
+    if {[catch {parseObjectTyped $text} typedReply]} {
+	if {![regexp {^\s*(\d+)\s+(.*)} $text - replyId dictReply]} {
+	    set dictReply $text
+	    set replyId 0
+	}
+	if {[catch {dict create replyId $replyId {*}$dictReply} dict]} {
+	    error "Непонятное выражение: $text"
+	}
+	set typedReply [list old $dict]
+    }
+    return $typedReply
+}
+
