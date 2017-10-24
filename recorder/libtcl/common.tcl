@@ -459,3 +459,11 @@ proc chanHasError {chan var} {
 }
 
 proc ignoreArgs {args} {}
+
+proc dictGetOr {dflt dict args} {
+    if {[catch {dict get $dict {*}$args} res]} {
+	return $dflt
+    } else {
+	return $res
+    }
+}
