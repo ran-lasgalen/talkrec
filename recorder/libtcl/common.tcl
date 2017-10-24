@@ -397,6 +397,8 @@ proc asyncLoop {tag intervalMs script} {
     } on error {err dbg} {
 	debugStackTrace $dbg
 	safelog {error "asyncLoop($tag): $err"}
+	after [expr {max($intervalMs,60000)}] [list asyncLoop $tag $intervalMs $script]
+	return
     } on break {} return
     after $intervalMs [list asyncLoop $tag $intervalMs $script]
 }
