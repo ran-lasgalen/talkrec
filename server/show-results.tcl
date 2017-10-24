@@ -53,6 +53,36 @@ proc htmlEscape {text} {
     return $res
 }
 
+proc showRecordStations {} {
+    ::tdbc::postgres::connection create db -database talkrec
+    try {
+	set content "<table border=\"1\"><tbody>\n<tr><th>салон</th><th>IP</th><th>№</th><th>версия</th><th>состояние</th><th>на</th><th>смещение времени</th></tr>\n"
+	db foreach row {select site.name, rs.* from record_station rs join site on site_id = site.id order by name, ip} {
+	    append content "<tr>"
+	    foreach k {name ip headset version state state_at time_diff} {
+		if {$k in {state ip}} {
+		    switch [dictGetOr "" $row state] {
+			работает { set class " class=\"green\"" }
+			отключен { set class " class=\"brown\"" }
+			default { set class " class=\"red\"" }
+		    }
+		} else {set class ""}
+		append content "<td$class>[dictGetOr {&nbsp;} $row $k]</td>"
+	    }
+	    append content "</tr>\n"
+	}
+    } finally { catchDbg {db close} }
+    set title [clock format [clock seconds] -format "Состояние станций записи на %H:%M:%S %d.%m.%Y"]
+    set css {
+	<style>
+	.red { color: red }
+	.green { color: green }
+	.brown { color: brown }
+	</style>
+    }
+    return "<html><head><title>$title</title>$css</head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
+}
+
 proc showRecords {{date {}}} {
     ::tdbc::postgres::connection create db -database talkrec
     try {
@@ -153,7 +183,7 @@ proc showReport {} {
 }
 
 proc links {} {
-    return "<div><a href='/'>результаты распознавания</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href='/report'>в работе</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href='/queue'>очередь</a></div>"
+    return "<div><a href='/'>результаты распознавания</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href='/report'>в работе</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href='/queue'>очередь</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href='/stations'>станции записи</a></div>"
 }
 
 proc showQueue {} {
@@ -195,6 +225,9 @@ proc serveRequest {chan addr port} {
 	}
 	{ /queue } {
 	    puts $chan [withHTTP [showQueue]]
+	}
+	{ /stations } {
+	    puts $chan [withHTTP [showRecordStations]]
 	}
 	{ /(\d\d\d\d-\d\d-\d\d) } {
 	    puts $chan [withHTTP [showRecords [lindex $matches 1]]]
