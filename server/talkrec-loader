@@ -15,9 +15,9 @@ proc importAllLoop {} {
     if {[catch importAll err dbg]} {
 	debugStackTrace $dbg
 	safelog {error $err}
-	after 10000 importAll
+	after 10000 importAllLoop
     } else {
-	after 1000 importAll
+	after 1000 importAllLoop
     }
 }
 
@@ -54,6 +54,7 @@ proc importAll {} {
 		safelog {error "Ошибка импорта $textFile:\n  $err"}
 		catchDbg {run file rename -- {*}[glob [file rootname $textFile]*] $problemsDir}
 	    } else {
+		safelog {info "Загружен $textFile"}
 		catchDbg {run file rename -- {*}[glob [file rootname $textFile]*] $loadedDir}
 	    }
 	}
