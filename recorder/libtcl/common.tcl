@@ -116,7 +116,7 @@ proc getOptions {defaultConfig optionsDesc {usage "options"}} {
     }
 }
 
-proc parseObject {text} {[lindex [parseObjectTyped $text] 0]}
+proc parseObject {text} {lindex [parseObjectTyped $text] 1}
 
 proc parseObjectTyped {text} {
     switch -regexp $text {
