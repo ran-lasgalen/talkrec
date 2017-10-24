@@ -130,7 +130,7 @@ proc onReplyFromRecorder {connData} {
     after 4000 [list asyncDisconnect $connData replyTimeout]
 }
 
-proc versionRequest {} {simpleDictToJSON [dict create reqId [nextMessageId] req version] 0}
+proc versionRequest {} {simpleDictToJSON [dict create msgId [nextMessageId] req version] 0}
 
 proc nextMessageId {} {incr ::nextMessageId}
 
