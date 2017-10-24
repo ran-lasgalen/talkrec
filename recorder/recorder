@@ -41,7 +41,7 @@ proc serveCmd {chan} {
 	switch [dictGetOr "" $req req] {
 	    state {tellState $chan $replyId}
 	    internals {puts $chan [list $replyId ::record [array get ::record] ::config $::config]}
-	    version {puts $chan [simpleDictToJSON [dict create replyId $replyId version aa time [clock seconds]] 0]}
+	    version {puts $chan [simpleDictToJSON [dict create replyId $replyId version $::version time [clock seconds]] 0]}
 	    clearError {
 		# Иногда после отваливания иксов pulseaudio входит в ступор. Вроде прибить помогает.
 		# Запустит потом само.
@@ -423,6 +423,7 @@ proc main {} {
 	::log::log error "Ошибка чтения конфигурации из $::opt(-config):\n$err"
 	exit 2
     }
+    set ::version [md5OfDir [file dirname [file normalize [info script]]]]
     set ::maxRecordTime 300
     set ::mode forbid
     array set ::intent [list \
