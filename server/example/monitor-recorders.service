@@ -1,0 +1,14 @@
+[Unit]
+Description=monitor of record stations
+AssertPathExists=$serverBin/monitor-recorders
+Requires=postgresql.service
+After=postgresql.service
+
+[Service]
+WorkingDirectory=~
+ExecStart=$serverBin/monitor-recorders
+RestartSec=12
+Restart=always
+
+[Install]
+WantedBy=default.target

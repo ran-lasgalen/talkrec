@@ -1,0 +1,159 @@
+#!/usr/bin/tclsh
+
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
+package require tdbc
+package require tdbc::postgres
+package require fileutil
+package require md5
+
+proc main {} {
+    getOptions [configDictFile dispatcher] {}
+    set ::config [readDict $::opt(-config)]
+    set ::database [dictGetOr talkrec $::config database]
+    array set ::hostState {}
+    array set ::hostVersion {}
+    asyncLoop runHostChecks 10000 runHostChecks
+    after 8000 {asyncLoop fixHostCheckResults 8000 fixHostCheckResults}
+    vwait exit
+}
+
+proc runHostChecks {} {
+    safelog {info "runHostChecks heartbeat"}
+    ::tdbc::postgres::connection create dbc -database $::database
+    try {
+	set hosts [lmap row [dbc allrows -as lists {select ip from record_station where state <> 'отключен' or state isnull}] {lindex $row 0}]
+    } finally {dbc close}
+    foreach host $hosts {asyncConnect $host 17119 2000 recorder onConnectToRecorder onDisconnectFromRecorder}
+}
+
+proc onConnectToRecorder {connData} {
+    safelog {debug [list onConnectToRecorder $connData]}
+    set chan [dict get $connData chan]
+    if {[chanHasError $chan err]} {return [asyncDisconnect $connData error $err]}
+    fconfigure $chan -buffering line
+    after 4000 [list asyncDisconnect $connData replyTimeout]
+    catchDbg {puts $chan [versionRequest]}
+    fileevent $chan readable [list onReplyFromRecorder $connData]
+}
+
+proc recordError {connData message} {
+    if {[catch {dict get $connData host} host]} {
+	safelog {error "Нет ключа host в [list $connData]\n  +проблема: $message"}
+    } else {
+	safelog {error "$host $message"}
+	recordState $host $message
+    }
+}
+
+proc fixHostCheckResults {} {
+    safelog {info "fixHostCheckResults heartbeat"}
+    set states [array get ::hostState]
+    set versions [array get ::hostVersion]
+    array set ::hostState {}
+    array set ::hostVersion {}
+    if {[dict size $states] + [dict size $versions] == 0} return
+    ::tdbc::postgres::connection create dbf -database $::database
+    try {
+	dict for {host state} $states {
+	    foreach {message seconds} $state break
+	    set timestamp [clock format $seconds -format "%Y-%m-%d %H:%M:%S%z"]
+	    dbf allrows {update record_station set state = :message, state_at = :timestamp where ip = :host and (state <> 'отключен' or state is null)} [dict create message $message timestamp $timestamp host $host]
+	}
+	dict for {host vd} $versions {
+	    dict set vd host $host
+	    dbf allrows {update record_station set version = :version, time_diff = :timeDiff where ip = :host} $vd
+	}
+    } finally {dbf close}
+}
+
+proc recordState {host message} {
+    set ::hostState($host) [list $message [clock seconds]]
+}
+
+proc recordVersion {host vdict} {
+    if {[catch {dict get $vdict version} version]} {set version ""}
+    if {$version eq ""} {set version "доисторическая"}
+    set vd [dict create version $version]
+    if {[dict exists $vdict time]} {
+	dict set vd timeDiff [expr {[dict get $vdict time] - [clock seconds]}]
+    }
+    set ::hostVersion($host) $vd
+}
+
+proc onDisconnectFromRecorder {connData reason message} {
+    safelog {debug [list onDisconnectFromRecorder $connData $reason $message]}
+    switch $reason {
+	connectTimeout {recordError $connData "недоступен"}
+	replyTimeout {recordError $connData "не ответил"}
+	error {
+	    if {$message eq "connection refused"} {
+		recordError $connData "не работает"
+	    } else {
+		recordError $connData $message
+	    }
+	}
+	ok {
+	    if {[catch {dict get $connData host} host]} {
+		safelog {error "Нет ключа host в [list $connData]"}
+	    } else {
+		safelog {debug "$host [list $message]"}
+		recordVersion $host $message
+		recordState $host "работает"
+	    }
+	}
+	default {recordError $connData $message}
+    }
+}
+
+proc onReplyFromRecorder {connData} {
+    after cancel [list asyncDisconnect $connData replyTimeout]
+    try {
+	set chan [dict get $connData chan]
+	if {[chanHasError $chan err]} {return [asyncDisconnect $connData error $err]}
+	while (1) {
+	    if {[catch {gets $chan line} len]} {return [asyncDisconnect $connData error $len]}
+	    if {$len < 0} break
+	    if {[regexp {^\s*$} $line]} continue
+	    try {
+		set obj [parseObject $line]
+		return [asyncDisconnect $connData ok [dict filter $obj key version time]]
+	    } on error {err} {
+		return [asyncDisconnect $connData ok ""]
+	    }
+	}
+	if {[eof $chan]} {return [asyncDisconnect $connData disconnected "разорвал связь"]}
+    } on error {err dbg} {
+	debugStackTrace $dbg
+	safelog {error "onReplyFromRecorder: $err\n  $connData"}
+    }
+    after 4000 [list asyncDisconnect $connData replyTimeout]
+}
+
+proc versionRequest {} {simpleDictToJSON [dict create reqId [nextMessageId] req version] 0}
+
+proc nextMessageId {} {incr ::nextMessageId}
+
+proc md5OfDir {dir} {
+    set startDir [pwd]
+    try {
+	cd $dir
+	set h [open .md5sum.tmp w]
+	set files [lsort [::fileutil::find .]]
+	foreach file $files {
+	    if {[string first "/." $file] >= 0} continue
+	    if {[file isdirectory $file]} continue
+	    puts $h "[::md5::md5 -hex -file $file]  $file"
+	}
+	close $h
+	set md5 [::md5::md5 -hex -file .md5sum.tmp]
+	if {[file exists .md5sum] && [::md5::md5 -hex -file .md5sum] eq $md5} {
+	    file delete .md5sum.tmp
+	} else {
+	    file rename -force .md5sum.tmp .md5sum
+	}
+	return $md5
+    } finally {cd $startDir}
+}
+
+runMain
