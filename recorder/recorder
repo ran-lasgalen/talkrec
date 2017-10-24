@@ -9,36 +9,6 @@ proc acceptConn {sock addr port} {
     fileevent $sock readable [list serveCmd $sock]
 }
 
-proc cleanupIncompleteCommandCache {} {
-    set now [clock seconds]
-    set staleTime [expr $now - 5]
-    foreach chan [array names ::incompleteCommandStart] {
-	if {$::incompleteCommandStart($chan) < $staleTime} {
-	    unset -nocomplain ::incompleteCommand($chan)
-	    unset -nocomplain ::incompleteCommandStart($chan)
-	}
-    }
-    return $now
-}
-
-proc getCommand {chan} {
-    set now [cleanupIncompleteCommandCache]
-    append ::incompleteCommand($chan) [gets $chan]
-    set cmd $::incompleteCommand($chan)
-    if {[info complete $cmd] && $cmd ne ""} {
-	unset -nocomplain ::incompleteCommand($chan)
-	unset -nocomplain ::incompleteCommandStart($chan)
-	return $cmd
-    } else {
-	if {[eof $chan]} {
-	    close $chan
-	} else {
-	    checkVar ::incompleteCommandStart($chan) $now
-	}
-	return ""
-    }
-}
-
 proc tellState {chan replyId} {
     set dct [dict merge [array get ::recordState] [array get ::intent] [list mode $::mode] [dict filter $::config key headset]]
     puts $chan [concat $replyId $dct]
@@ -47,17 +17,31 @@ proc tellState {chan replyId} {
 proc tellErrors {chan replyId errors} {puts $chan [list $replyId errors $errors]}
 
 proc serveCmd {chan} {
-    set cmdWithId [getCommand $chan]
-    if {$cmdWithId eq ""} return
-    if {![regexp {^\s*(\d+)(.*)} $cmdWithId - replyId cmd]} {
-	set cmd $cmdWithId
-	set replyId 0
+    set line [gets $chan]
+    if {[regexp {^\s*$} $line]} return
+    safelog {debug "запрос: $line"}
+    if {[catch {parseObjectTyped $line} typedReq]} {
+	if {![regexp {^\s*(\d+)\s+(.*)} $line - replyId oldReq]} {
+	    set oldReq $line
+	    set replyId 0
+	}
+	if {![regexp {^\s*([a-zA-Z]+)(?:\s+(.*))?$} $oldReq - req params] ||
+	    [catch {dict create msgId $replyId req $req {*}$params} dict]} {
+	    set msg "Непонятное выражение: $line"
+	    safelog {error $msg}
+	    tellErrors $chan $replyId [list $msg]
+	    return
+	}
+	set typedReq [list old $dict]
     }
+    foreach {reqType req} $typedReq break
+    set replyId [dictGetOr 0 $req msgId]
     try {
-	switch -regexp -matchvar matches $cmd {
-	    {^\s*state\M} {tellState $chan $replyId}
-	    {^internals$} {puts $chan [list $replyId ::record [array get ::record] ::config $::config]}
-	    {^\s*clearError\s*$} {
+	switch [dictGetOr "" $req req] {
+	    state {tellState $chan $replyId}
+	    internals {puts $chan [list $replyId ::record [array get ::record] ::config $::config]}
+	    version {puts $chan [simpleDictToJSON [dict create replyId $replyId version aa time [clock seconds]] 0]}
+	    clearError {
 		# Иногда после отваливания иксов pulseaudio входит в ступор. Вроде прибить помогает.
 		# Запустит потом само.
 		catchDbg {
@@ -72,56 +56,52 @@ proc serveCmd {chan} {
 		    tellState $chan $replyId
 		}
 	    }
-	    {^\s*stop\s*$} {
+	    stop {
 		stopRecord
 		checkRecordState
 		tellState $chan $replyId
 	    }
-	    {^\s*end\s*$} {
+	    end {
 		array set ::intent {mode end}
 		stopRecord
 		checkRecordState
 		tellState $chan $replyId
 	    }
-	    {^\s*start\s+(\S.*)} {
-		if {[catch {dict merge \
+	    start {
+		set params [dict merge \
 				[dict filter $::config key siteId auto] \
 				[dict create maxTime $::maxRecordTime] \
-				[lindex $matches 1]} params dbg]} {
-		    debugStackTrace $dbg
-		    tellErrors $chan $replyId [list $params]
+				$req]
+		if {![catch {dict get $params mode} mode] && $mode in {forbid end}} {
+		    set errors {}
 		} else {
-		    if {![catch {dict get $params mode} mode] && $mode in {forbid end}} {
-			set errors {}
-		    } else {
-			set errors [checkDict $params {
-			    {mode "режим записи: auto, manual, forbid или end" {^(auto|manual|forbid|en)$}}
-			    {employeeId "идентификатор сотрудника" {^\d+$}}
-			    {siteId "идентификатор салона" {^\d+$}}
-			    {maxTime "максимальное время записи" {^\d+$}}
-			}]
+		    set errors [checkDict $params {
+			{mode "режим записи: auto, manual, forbid или end" {^(auto|manual|forbid|en)$}}
+			{employeeId "идентификатор сотрудника" {^\d+$}}
+			{siteId "идентификатор салона" {^\d+$}}
+			{maxTime "максимальное время записи" {^\d+$}}
+		    }]
+		}
+		if {$mode ni {forbid end} && [catch {checkAutoParams $params} err]} {lappend $errors $err}
+		if {[llength $errors] > 0} {
+		    tellErrors $chan $replyId $errors
+		} else {
+		    set maxTime [dict get $params maxTime]
+		    if {$maxTime <= 0 || $maxTime > $::maxRecordTime} {
+			dict set params maxTime $::maxRecordTime
 		    }
-		    if {$mode ni {forbid end} && [catch {checkAutoParams $params} err]} {lappend $errors $err}
-		    if {[llength $errors] > 0} {
-			tellErrors $chan $replyId $errors
-		    } else {
-			set maxTime [dict get $params maxTime]
-			if {$maxTime <= 0 || $maxTime > $::maxRecordTime} {
-			    dict set params maxTime $::maxRecordTime
-			}
-			array set ::intent $params
-			stopRecord
-			checkRecordState
-			tellState $chan $replyId
-		    }
+		    array set ::intent $params
+		    stopRecord
+		    checkRecordState
+		    tellState $chan $replyId
 		}
 	    }
-	    {^\s*setError\s+(.*)} {
-		setErrorState [lindex $matches 1]
+	    setError {
+		setErrorState [dictGetOr "отладочная ошибка" $req msg]
 		tellState $chan $replyId
 	    }
 	    default {
-		tellErrors $chan $replyId [list "Неизвестная команда: $cmd"]
+		tellErrors $chan $replyId [list "Неизвестная команда: $req"]
 	    }
 	}
     } on error {err dbg} {

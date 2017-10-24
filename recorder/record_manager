@@ -150,13 +150,16 @@ proc requestState {peer} {
 }
 
 proc handleReply {chan} {
-    setIfExists ::chanPeer($chan) peer
-    set replyWithId [getReply $chan]
-    if {$replyWithId eq ""} return
-    ::log::log debug "$peer -> $replyWithId"
-    if {![regexp {^\s*(\d+)\s+(\S.*)} $replyWithId - replyId reply]} {
-	set reply $replyWithId
-	set replyId 0
+    if {![setIfExists ::chanPeer($chan) peer]} {
+	safelog {error "Oops! no peer for $chan"}
+	return
+    }
+    set line [gets $chan]
+    if {[regexp {^\s*$} $line]} return
+    safelog {debug "$peer -> $line"}
+    if {[catch {lindex [parseRecorderReply $line] 1} reply]} {
+	safelog {error "Проблема с запросом от $peer: $reply"}
+	return
     }
     array set state $reply
     if {[setIfExists state(headset) headset]} {
@@ -168,40 +171,6 @@ proc handleReply {chan} {
 	set ::headsetState($headset) [array get state]
 	updateWidgetsForHeadset $headset
     }
-}
-
-proc getReply {chan} {
-    set now [cleanupIncompleteCommandCache]
-    append ::incompleteCommand($chan) [gets $chan]
-    set cmd $::incompleteCommand($chan)
-    if {[info complete $cmd] && $cmd ne ""} {
-	unset -nocomplain ::incompleteCommand($chan) ::incompleteCommandStart($chan)
-	return $cmd
-    } else {
-	if {[eof $chan]} {
-	    cleanChan $chan
-	} else {
-	    checkVar ::incompleteCommandStart($chan) $now
-	}
-	return ""
-    }
-}
-
-proc checkVar {var val} {
-    upvar $var v
-    if {![info exists v]} {set v $val}
-}
-
-proc cleanupIncompleteCommandCache {} {
-    set now [clock seconds]
-    set staleTime [expr $now - 5]
-    foreach chan [array names ::incompleteCommandStart] {
-	if {$::incompleteCommandStart($chan) < $staleTime} {
-	    unset -nocomplain ::incompleteCommand($chan)
-	    unset -nocomplain ::incompleteCommandStart($chan)
-	}
-    }
-    return $now
 }
 
 proc nextCommandId {} {
