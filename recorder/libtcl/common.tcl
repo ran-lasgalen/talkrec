@@ -390,14 +390,15 @@ proc runMain {{script main}} {
 }
 
 # Выполняет script циклически через указанный интервал, начиная с прямо сейчас.
-# Скрипт может завершить этот цикл, выдав return -code break
+# Скрипт может завершить этот цикл, выдав break. Если это процедура - return -code break
 proc asyncLoop {tag intervalMs script} {
     try {
 	uplevel #0 $script
     } on error {err dbg} {
 	debugStackTrace $dbg
-	safelog {error "asyncLoop($tag): $err"}
-	after [expr {max($intervalMs,60000)}] [list asyncLoop $tag $intervalMs $script]
+	set pause [expr {max($intervalMs,60000)}]
+	safelog {error "asyncLoop($tag): $err\n  повтор через [expr {$pause / 1000}] с"}
+	after $pause [list asyncLoop $tag $intervalMs $script]
 	return
     } on break {} return
     after $intervalMs [list asyncLoop $tag $intervalMs $script]
