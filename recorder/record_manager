@@ -150,8 +150,10 @@ proc requestState {peer} {
 }
 
 proc handleReply {chan} {
+    if {[chanHasError $chan err] || [eof $chan]} {cleanChan $chan; return}
     if {![setIfExists ::chanPeer($chan) peer]} {
 	safelog {error "Oops! no peer for $chan"}
+	cleanChan $chan
 	return
     }
     set line [gets $chan]

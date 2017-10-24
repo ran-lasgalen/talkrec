@@ -17,6 +17,7 @@ proc tellState {chan replyId} {
 proc tellErrors {chan replyId errors} {puts $chan [list $replyId errors $errors]}
 
 proc serveCmd {chan} {
+    if {[chanHasError $chan err] || [eof $chan]} {catch {close $chan}; return}
     set line [gets $chan]
     if {[regexp {^\s*$} $line]} return
     safelog {debug "запрос: $line"}
