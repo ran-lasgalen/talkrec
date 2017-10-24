@@ -116,11 +116,14 @@ proc getOptions {defaultConfig optionsDesc {usage "options"}} {
     }
 }
 
-proc parseObject {text} {
+proc parseObject {text} {[lindex [parseObjectTyped $text] 0]}
+
+proc parseObjectTyped {text} {
     switch -regexp $text {
-	"^\\s*\\\{" {::json::json2dict $text}
-	"^\\s*\\\[" {::json::many-json2dict $text}
-	default {::yaml::yaml2dict $text}
+	"^\\s*\\\{" {list json [::json::json2dict $text]}
+	{^tcl } {list tcl [dict create {*}[lindex $text 1]]}
+	{^---\s} {list yaml [::yaml::yaml2dict $text]}
+	default {error "parseObject: непонятный формат:\n$text"}
     }
 }
 
