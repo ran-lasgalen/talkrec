@@ -3,6 +3,8 @@ package require log 1.3
 package require yaml 0.3.6
 package require json 1.3
 package require json::write 1.0.2
+package require fileutil
+package require md5
 
 set ::configDir [file normalize ~/.config/talkrec]
 set ::dryRun 0
@@ -485,3 +487,24 @@ proc parseRecorderReply {text} {
     return $typedReply
 }
 
+proc md5OfDir {dir} {
+    set startDir [pwd]
+    try {
+	cd $dir
+	set h [open .md5sum.tmp w]
+	set files [lsort [::fileutil::find .]]
+	foreach file $files {
+	    if {[string first "/." $file] >= 0} continue
+	    if {[file isdirectory $file]} continue
+	    puts $h "[::md5::md5 -hex -file $file]  $file"
+	}
+	close $h
+	set md5 [::md5::md5 -hex -file .md5sum.tmp]
+	if {[file exists .md5sum] && [::md5::md5 -hex -file .md5sum] eq $md5} {
+	    file delete .md5sum.tmp
+	} else {
+	    file rename -force .md5sum.tmp .md5sum
+	}
+	return $md5
+    } finally {cd $startDir}
+}
