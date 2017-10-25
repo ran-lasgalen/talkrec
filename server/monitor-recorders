@@ -81,8 +81,8 @@ proc recordVersion {host vdict} {
 proc onDisconnectFromRecorder {connData reason message} {
     safelog {debug [list onDisconnectFromRecorder $connData $reason $message]}
     switch $reason {
-	connectTimeout {recordError $connData "недоступен"}
-	replyTimeout {recordError $connData "не ответил"}
+	connectTimeout {recordError $connData "недоступна"}
+	replyTimeout {recordError $connData "не ответила"}
 	error {
 	    if {$message eq "connection refused"} {
 		recordError $connData "не работает"
