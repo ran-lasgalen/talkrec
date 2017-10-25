@@ -20,7 +20,7 @@ proc main {} {
 	createFileViaTmp [configFile install-recorder.json] [simpleDictToJSON $::config 1]
     }
     set db [::tdbc::postgres::connection create db -database talkrec]
-    set ipConf [siteAndHeadsetForIP $::ip]
+    set ipConf [siteAndHeadsetForIP $db $::ip]
     set pwFile [configFile recorder.pw]
     puts "Проверяем наличие пароля станции в $pwFile..."
     set ::sudoPassword [string trim [readFile! $pwFile]]
