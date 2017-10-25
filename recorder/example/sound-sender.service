@@ -1,0 +1,12 @@
+[Unit]
+Description=sound sender
+AssertPathExists=$recorderBin/sound_sender
+
+[Service]
+WorkingDirectory=~
+ExecStart=$recorderBin/sound_sender
+RestartSec=12
+Restart=always
+
+[Install]
+WantedBy=default.target

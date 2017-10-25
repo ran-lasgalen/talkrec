@@ -1,0 +1,12 @@
+[Unit]
+Description=sound recorder
+AssertPathExists=$recorderBin/recorder
+
+[Service]
+WorkingDirectory=~
+ExecStart=$recorderBin/recorder
+RestartSec=12
+Restart=always
+
+[Install]
+WantedBy=default.target
