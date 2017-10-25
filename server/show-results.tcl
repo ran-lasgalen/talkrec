@@ -54,9 +54,9 @@ proc htmlEscape {text} {
 }
 
 proc showRecordStations {} {
-    if {[catch {md5OfDir [file dirname $::libtcldir]} myVersion]} {
+    if {[catch {md5OfDir [file dirname $::libtcldir] check} myVersions]} {
 	safelog {error $myVersion}
-	set myVersion X
+	set myVersions X
     }
     ::tdbc::postgres::connection create db -database talkrec
     try {
@@ -71,7 +71,7 @@ proc showRecordStations {} {
 			default { set class red }
 		    }
 		} elseif {$k eq "version"} {
-		    if {[dictGetOr Y $row version] eq $myVersion} {set class green} {set class red}
+		    if {[dictGetOr Y $row version] in $myVersions} {set class green} {set class brown}
 		} else {set class ""}
 		if {$class eq ""} {set addclass ""} {set addclass " class=\"$class\""}
 		append content "<td$addclass>[dictGetOr {&nbsp;} $row $k]</td>"
