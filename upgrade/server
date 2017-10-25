@@ -1,0 +1,15 @@
+#!/usr/bin/tclsh
+set ::scriptDir [file dirname [file normalize [info script]]]
+set ::libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
+source [file join $libtcldir install.tcl]
+
+proc main {} {
+    getOptions - {}
+    if {![dict exists $::paths serverBin]} {
+	dict set ::paths serverBin [file normalize [file join $::talkrecDir server]]
+    }
+    installServiceFiles [glob -nocomplain -directory [dict get $::paths serverBin] *.service]
+}
+
+runMain

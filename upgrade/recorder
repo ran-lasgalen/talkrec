@@ -1,0 +1,80 @@
+#!/usr/bin/tclsh
+set ::scriptDir [file dirname [file normalize [info script]]]
+set ::libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+set ::talkrecDir [file dirname $::scriptDir]
+source [file join $libtcldir common.tcl]
+source [file join $libtcldir install.tcl]
+package require tdbc
+package require tdbc::postgres
+
+proc main {} {
+    getOptions - {
+	{--gen-only "Только сделать файлы для установки"}
+    }
+    if {![dict exists $::paths recorderBin]} {
+	dict set ::paths recorderBin [file normalize [file join $::talkrecDir recorder]]
+    }
+    md5OfDir [dict get $::paths recorderBin] update
+    if {[catch {readDict [configDictFile install-recorder]} config]} {set config {}}
+    set defaultConfig [dict create remoteUser user]
+    set ::config [dict merge $defaultConfig $config]
+    if {![dict exists $::config serverAddr]} {
+	dict set ::config serverAddr [getServerAddr]
+	createFileViaTmp [configFile install-recorder.json] [simpleDictToJSON $::config 1]
+    }
+    set pwFile [configFile recorder.pw]
+    puts "Проверяем наличие пароля станций в $pwFile..."
+    set ::sudoPassword [string trim [readFile! $pwFile]]
+    puts "... найден."
+    set db [::tdbc::postgres::connection create db -database talkrec]
+    try {
+	foreach ip $::argv {upgradeOnIP $db $ip}
+    } finally {$db close}
+}
+
+proc upgradeOnIP {db ip} {
+    set ipConf [siteAndHeadsetForIP $db $ip]
+    # Создаем папку с файлами для установки
+    set upgraderDir "talkrec-upgrade-$ip"
+    file delete -force -- $upgraderDir
+    file mkdir $upgraderDir
+    file attributes $upgraderDir -permissions 0700
+    # Создаем скрипт апгрейда
+    set upgradeRecorder [file join $upgraderDir upgrade]
+    set sh [open $upgradeRecorder w]
+    puts $sh "#!/usr/bin/tclsh"
+    puts $sh [readFile [file join $::libtcldir common.tcl]]
+    puts $sh ""
+    puts $sh [readFile [file join $::libtcldir install.tcl]]
+    puts $sh ""
+    puts $sh [readFile [file join $::scriptDir on-recorder.tcl]]
+    close $sh
+    file attributes $upgradeRecorder -permissions 0755
+    # Создаем конфиги
+    createFileViaTmp [file join $upgraderDir recorder.json] [genRecorderConfig $ipConf [dict get $::config serverAddr]]
+    createFileViaTmp [file join $upgraderDir record_manager.json] [genRecordManagerConfig $db [dict get $ipConf site_id]]
+    createFileViaTmp [file join $upgraderDir employees.json] [genEmployeesConfig $db [dict get $ipConf site_id]]
+    if {$::opt(-gen-only)} return
+    # Копируем апгрейдер
+    runExec scp -rp $upgraderDir [sshWhere $ip]:
+    # и запускаем
+    if {$::opt(-debug)} {set dbgarg --debug} else {set dbgarg {}}
+    runExec {*}[concat [sshToStation $ip ./$upgradeRecorder --sudo-pw $::sudoPassword] $dbgarg]
+    file delete -force -- $upgraderDir
+}
+
+proc sshWhere {host} {
+    set user [dict get $::config remoteUser]
+    if {$user ne ""} {append user @}
+    string cat $user $host
+}
+
+proc sshToStation {host args} {
+    sshCmd [sshWhere $host] {*}$args
+}
+
+proc sshCmd {where args} {
+    concat [list ssh -o BatchMode=yes $where] $args
+}
+
+runMain
