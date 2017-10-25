@@ -71,43 +71,46 @@ proc serveCmd {chan} {
 	    [catch {dict create msgId $replyId req $req {*}$params} dict]} {
 	    set msg "Непонятное выражение: $line"
 	    safelog {error $msg}
-	    tellErrors $chan $replyId [list $msg]
+	    tellErrors $chan $replyId [list $msg] old
 	    return
 	}
 	set typedReq [list old $dict]
     }
-    foreach {reqType req} $typedReq break
+    foreach {reqFmt req} $typedReq break
     set replyId [dictGetOr 0 $req msgId]
     try {
 	switch [dictGetOr "" $req req] {
-	    state {tellState $chan $replyId}
+	    state {tellState $chan $replyId $reqFmt}
 	    internals {puts $chan [list $replyId ::record [array get ::record] ::config $::config]}
-	    version {puts $chan [simpleDictToJSON [dict create replyId $replyId version $::version time [clock seconds]] 0]}
+	    version {puts $chan [simpleDictToJSON [dict create replyId $replyId version $::version now [clock seconds]] 0]}
 	    clearError {
 		# Иногда после отваливания иксов pulseaudio входит в ступор. Вроде прибить помогает.
 		# Запустит потом само.
 		catchDbg {
 		    switch [dict get $::config soundSystem] {
-			pulse {run exec pulseaudio --kill}
+			pulse {
+			    catchDbg {run exec pulseaudio --kill}
+			    run exec pulseaudio --start
+			}
 		    }
 		}
 		if {$::recordState(state) eq "error"} {
 		    set ::recordState(state) restart
 		    unset -nocomplain ::recordState(errorMessage)
 		    checkRecordState
-		    tellState $chan $replyId
+		    tellState $chan $replyId $reqFmt
 		}
 	    }
 	    stop {
 		stopRecord
 		checkRecordState
-		tellState $chan $replyId
+		tellState $chan $replyId $reqFmt
 	    }
 	    end {
 		array set ::intent {mode end}
 		stopRecord
 		checkRecordState
-		tellState $chan $replyId
+		tellState $chan $replyId $reqFmt
 	    }
 	    start {
 		set params [dict merge \
@@ -126,7 +129,7 @@ proc serveCmd {chan} {
 		}
 		if {$mode ni {forbid end} && [catch {checkAutoParams $params} err]} {lappend $errors $err}
 		if {[llength $errors] > 0} {
-		    tellErrors $chan $replyId $errors
+		    tellErrors $chan $replyId $errors $reqFmt
 		} else {
 		    set maxTime [dict get $params maxTime]
 		    if {$maxTime <= 0 || $maxTime > $::maxRecordTime} {
@@ -135,20 +138,20 @@ proc serveCmd {chan} {
 		    array set ::intent $params
 		    stopRecord
 		    checkRecordState
-		    tellState $chan $replyId
+		    tellState $chan $replyId $reqFmt
 		}
 	    }
 	    setError {
 		setErrorState [dictGetOr "отладочная ошибка" $req msg]
-		tellState $chan $replyId
+		tellState $chan $replyId $reqFmt
 	    }
 	    default {
-		tellErrors $chan $replyId [list "Неизвестная команда: $req"]
+		tellErrors $chan $replyId [list "Неизвестная команда: $line"] $reqFmt
 	    }
 	}
     } on error {err dbg} {
 	debugStackTrace $dbg
-	tellErrors $chan $replyId [list "Ошибка разработчика: $err"]
+	tellErrors $chan $replyId [list "Oops! $err"] $reqFmt
     }
 }
 
