@@ -362,19 +362,16 @@ proc pluralRu {n one two five} {
 proc simpleDictToJSON {dict indented} {
     ::json::write indented $indented
     set object {}
-    dict for {k v} $dict {
-	switch $k {
-	    default {
-		lappend object $k
-		if {[regexp {^-?\d+(.\d+)?([eE][+-]?\d+)?$} $v]} {
-		    lappend object $v
-		} else {
-		    lappend object [::json::write string $v]
-		}
-	    }
-	}
-    }
+    dict for {k v} $dict {lappend object $k [scalarToJSON $v]}
     ::json::write object {*}$object
+}
+
+proc scalarToJSON {value} {
+    if {[regexp {^-?\d+(.\d+)?([eE][+-]?\d+)?$} $value]} {
+	return $value
+    } else {
+	::json::write string $value
+    }
 }
 
 proc substFromDict {dictAi1ciemu textAi1ciemu} {
