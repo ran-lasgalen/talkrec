@@ -63,15 +63,19 @@ proc showRecordStations {} {
 	set content "<table border=\"1\"><tbody>\n<tr><th>салон</th><th>IP</th><th>№</th><th>версия</th><th>состояние</th><th>на</th><th>смещение времени</th></tr>\n"
 	db foreach row {select site.name, rs.* from record_station rs join site on site_id = site.id order by name, ip} {
 	    append content "<tr>"
+	    set version [dictGetOr Y $row version]
+	    set state [dictGetOr "" $row state]
 	    foreach k {name ip headset version state state_at time_diff} {
 		if {$k in {state ip}} {
-		    switch [dictGetOr "" $row state] {
+		    switch $state {
 			работает { set class green }
-			отключен { set class brown }
-			default { set class red }
+			отключена { set class orange }
+			default {
+			    if {$version eq "ПО не установлено"} {set class orange} {set class red }
+			}
 		    }
 		} elseif {$k eq "version"} {
-		    if {[dictGetOr Y $row version] in $myVersions} {set class green} {set class brown}
+		    if {$version in $myVersions} {set class green} {set class orange}
 		} else {set class ""}
 		if {$class eq ""} {set addclass ""} {set addclass " class=\"$class\""}
 		append content "<td$addclass>[dictGetOr {&nbsp;} $row $k]</td>"
@@ -84,7 +88,7 @@ proc showRecordStations {} {
 	<style>
 	.red { color: red }
 	.green { color: green }
-	.brown { color: brown }
+	.orange { color: orange }
 	</style>
     }
     return "<html><head><title>$title</title>$css</head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
