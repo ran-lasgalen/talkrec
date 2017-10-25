@@ -175,3 +175,112 @@ proc inputList {listPrompt elementPrompt} {
 	puts "Введено: [list $res]"
     }
 }
+
+proc installServiceFiles {files} {
+    set systemdDir ~/.config/systemd/user
+    if {![dict exists $::paths serverBin]} {
+	dict set ::paths serverBin [file normalize ~/talkrec/server]
+    }
+    if {![dict exists $::paths recorderBin]} {
+	dict set ::paths recorderBin [file normalize ~/talkrec/recorder]
+    }
+    if {![dict exists $::paths queue]} {
+	dict set ::paths queue [file normalize ~/queue]
+    }
+    if {![dict exists $::paths talks]} {
+	dict set ::paths talks [file normalize ~/talks]
+    }
+    set substs [dict merge [dict create configDir $::configDir] $::paths]
+    set services {}
+    foreach template $files {
+	set sf [file tail $template]
+	lappend services $sf
+	catchDbg {runExec systemctl --user stop $sf}
+	createFileViaTmp [file join $systemdDir $sf] [substFromDict $substs [readFile $template]]
+    }
+    runExec systemctl --user daemon-reload
+    foreach service $services {
+	runExec systemctl --user enable $service
+	runExec systemctl --user start $service
+    }
+}
+
+proc siteAndHeadsetForIP {db ip} {
+    set result [$db allrows {select headset, site_id from record_station where ip = :ip}]
+    switch [llength $result] {
+	1 {set conf [lindex $result 0]}
+	0 {error "База данных ничего не знает про станцию с IP $ip"}
+	default {error "В базе данных несколько записей про станцию с IP $ip:\n$result"}
+    }
+    if {![dict exists $conf headset]} {error "Неизвестен номер гарнитуры для $ip"}
+    if {![dict exists $conf site_id]} {error "Неизвестен салон, в котором находится $ip"}
+    return $conf
+}
+
+proc genEmployeesConfig {db siteId} {
+    set employees {}
+    $db foreach -as lists r {select name, id from employee, site_employee where id = employee_id and site_id = :siteId order by name} {lappend employees {*}$r}
+    simpleDictToJSON $employees 1
+}
+
+proc genRecordManagerConfig {db siteId} {
+    ::json::write indented 1
+    set recorders [$db allrows -as lists {select ip from record_station where site_id = :siteId}]
+    set recordersJSON [::json::write array {*}[lmap el $recorders {::json::write string $el}]]
+    ::json::write object siteId $siteId recorders $recordersJSON
+}
+
+proc genRecorderConfig {ipConf serverAddr} {
+    set user site[dict get $ipConf site_id]
+    ::json::write indented 1
+    ::json::write object \
+	headset [dict get $ipConf headset] \
+	recorderPort 17119 \
+	soundSystem [::json::write string pulse] \
+	deviceRE [::json::write string input.usb-GN_Netcom_A_S_Jabra_PRO_9460] \
+	server [::json::write string $serverAddr] \
+	user [::json::write string $user] \
+	password [::json::write string [getSiteRsyncPassword $user]] \
+	workHours [::json::write array 10 21] \
+	auto [::json::write object \
+		  autoMode [::json::write string silence] \
+		  aboveDuration 0.5 \
+		  aboveLevel [::json::write string 0.1%] \
+		  belowDuration 10.0 \
+		  belowLevel [::json::write string 2%]]
+}
+
+proc getServerAddr {} {
+    set pipe [open {| ip -o ad ls scope global} r]
+    try {
+	while {[gets $pipe line] >= 0} {
+	    if {[regexp {\sinet\s+(\d+\.\d+\.\d+\.\d+)} $line - ip]} {
+		puts -nonewline "Адрес сервера - $ip? (YД/nн) "
+		flush stdout
+		gets stdin reply
+		if {[regexp {^\s*([yYдД]|$)} $reply]} {return $ip}
+	    }
+	}
+	error "getServerAddr: годного адреса сервера не нашлось"
+    } finally {
+	close $pipe
+    }
+}
+
+proc getSiteRsyncPassword {user} {
+    set h [open [configFile rsyncd.secrets] r]
+    try {
+	while {[gets $h line] >= 0} {
+	    foreach {login password} [split $line :] break
+	    if {[string trim $login] ne $user} continue
+	    set password [string trim $password]
+	    if {$password eq ""} {error "Пароль для $login пустой"}
+	    return $password
+	}
+    } finally {close $h}
+    set h [open /dev/urandom r]
+    try {set password [binary encode hex [read $h 16]]} finally {close $h}
+    set h [open [configFile rsyncd.secrets] a]
+    try {puts $h "${user}:$password"} finally {close $h}
+    return $password
+}
