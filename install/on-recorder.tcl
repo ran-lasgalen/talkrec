@@ -37,26 +37,7 @@ proc main {} {
     catchDbg {runExec pulseaudio --kill}
     runExec pulseaudio --start
     # настраиваем запуск recorder и sound_sender
-    set services {recorder sound_sender}
-    foreach service $services {
-	set content [list \
-			 {[Unit]} \
-			 "AssertPathExists=[file join $::scriptDir $service]" \
-			 "" \
-			 {[Service]} \
-			 {WorkingDirectory=~} \
-			 "ExecStart=[file join $::scriptDir $service]" \
-			 "" \
-			 {[Install]} \
-			 {WantedBy=default.target}]
-	createFileViaTmp [file join $serviceDir $service.service] [join $content "\n"]
-    }
-    runExec systemctl --user daemon-reload
-    foreach service $services {
-	runExec systemctl --user enable $service
-	catchDbg {runExec systemctl --user stop $service}
-	runExec systemctl --user start $service
-    }
+    installServiceFiles [glob -directory [file join [dict get $::paths recorderBin] example] *.service]
     createFileViaTmp ~/.xsession "#!/bin/sh\nspectrwm &\n[file join $::scriptDir record_manager]"
     set debs [debsYetToInstall nodm]
     if {"nodm" in $debs} {
