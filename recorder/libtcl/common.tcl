@@ -487,24 +487,37 @@ proc parseRecorderReply {text} {
     return $typedReply
 }
 
-proc md5OfDir {dir} {
+proc md5OfDir {dir {sumFileDo ignore}} {
     set startDir [pwd]
     try {
 	cd $dir
-	set h [open .md5sum.tmp w]
+	set sumList ""
 	set files [lsort [::fileutil::find .]]
 	foreach file $files {
 	    if {[string first "/." $file] >= 0} continue
 	    if {[file isdirectory $file]} continue
-	    puts $h "[::md5::md5 -hex -file $file]  $file"
+	    append sumList "[::md5::md5 -hex -file $file]  $file\n"
 	}
-	close $h
-	set md5 [::md5::md5 -hex -file .md5sum.tmp]
-	if {[file exists .md5sum] && [::md5::md5 -hex -file .md5sum] eq $md5} {
-	    file delete .md5sum.tmp
-	} else {
-	    file rename -force .md5sum.tmp .md5sum
+	set md5 [::md5::md5 -hex $sumList]
+	switch $sumFileDo {
+	    ignore {return $md5}
+	    update {
+		if {![file exists .md5sum] ||
+		    [::md5::md5 -hex -file .md5sum] ne $md5} {
+		    ::fileutil::writeFile .md5sum $sumList
+		}
+		return $md5
+	    }
+	    check {
+		if {[file exists .md5sum]} {
+		    return [list $md5 [::md5::md5 -hex -file .md5sum]]
+		} else {
+		    return [list $md5 ""]
+		}
+	    }
+	    default {
+		error "sumFileDo должно быть ignore, update или check"
+	    }
 	}
-	return $md5
     } finally {cd $startDir}
 }
