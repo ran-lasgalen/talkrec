@@ -115,7 +115,7 @@ proc onReplyFromRecorder {connData} {
 	    if {[regexp {^\s*$} $line]} continue
 	    try {
 		set obj [parseObject $line]
-		return [asyncDisconnect $connData ok [dict filter $obj key version time]]
+		return [asyncDisconnect $connData ok [dict filter $obj key version now]]
 	    } on error {err} {
 		return [asyncDisconnect $connData ok ""]
 	    }
