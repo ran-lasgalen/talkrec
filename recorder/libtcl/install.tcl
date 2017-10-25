@@ -133,7 +133,7 @@ proc installSystemdService {exampleFile {service ""}} {
     if {[filesEqual $tmpFile $serviceFile]} {
 	run file delete -- $tmpFile
     } else {
-	run file rename --force $tmpFile $serviceFile
+	run file rename -force $tmpFile $serviceFile
 	runExec systemctl --user daemon-reload
     }
     runExec systemctl --user enable $service
