@@ -26,9 +26,9 @@ proc tellState {chan replyId {format old}} {
 	}
 	tcl {
 	    dict set dct replyId $replyId
-	    set reply [list tcl $dct]
+	    set reply [string map {"\n" " "} [list tcl $dct]]
 	}
-	old {set reply [concat $replyId $dct]}
+	old {set reply [string map {"\n" " "} [concat $replyId $dct]]}
 	default {
 	    safelog {error "неизвестный формат ответа $format"}
 	    return
