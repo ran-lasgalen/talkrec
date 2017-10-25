@@ -60,7 +60,7 @@ proc main {} {
     file delete -force -- $::installerDir
     runExec sleep 1
     runExec {*}[sshToStation systemctl --user restart recorder]
-    close $db
+    $db close
 }
 
 proc sshWhere {} {
