@@ -9,9 +9,32 @@ proc acceptConn {sock addr port} {
     fileevent $sock readable [list serveCmd $sock]
 }
 
-proc tellState {chan replyId} {
-    set dct [dict merge [array get ::recordState] [array get ::intent] [list mode $::mode] [dict filter $::config key headset]]
-    puts $chan [concat $replyId $dct]
+proc tellState {chan replyId {format old}} {
+    if {$format eq "yaml"} {set format json}
+    # mode вставляется после ::intent, потому что нам нужно mode из ::mode
+    set dct [dict merge [array get ::recordState] [array get ::intent] [list mode $::mode now [clock seconds]] [dict filter $::config key headset]]
+    switch $format {
+	json {
+	    ::json::write indented 0
+	    dict set dct replyId $replyId
+	    set reply [::json::write object {*}[dict map {k v} $dct {
+		switch $k {
+		    auto {simpleDictToJSON $v 0}
+		    default {scalarToJSON $v}
+		}
+	    }]]
+	}
+	tcl {
+	    dict set dct replyId $replyId
+	    set reply [list tcl $dct]
+	}
+	old {set reply [concat $replyId $dct]}
+	default {
+	    safelog {error "неизвестный формат ответа $format"}
+	    return
+	}
+    }
+    puts $chan $reply
 }
 
 proc tellErrors {chan replyId errors} {puts $chan [list $replyId errors $errors]}
