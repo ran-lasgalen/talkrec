@@ -20,7 +20,7 @@ proc runHostChecks {} {
     safelog {info "runHostChecks heartbeat"}
     ::tdbc::postgres::connection create dbc -database $::database
     try {
-	set hosts [lmap row [dbc allrows -as lists {select ip from record_station where state <> 'отключен' or state isnull}] {lindex $row 0}]
+	set hosts [lmap row [dbc allrows -as lists {select ip from record_station}] {lindex $row 0}]
     } finally {dbc close}
     foreach host $hosts {asyncConnect $host 17119 2000 recorder onConnectToRecorder onDisconnectFromRecorder}
 }
@@ -39,7 +39,6 @@ proc recordError {connData message} {
     if {[catch {dict get $connData host} host]} {
 	safelog {error "Нет ключа host в [list $connData]\n  +проблема: $message"}
     } else {
-	safelog {error "$host $message"}
 	recordState $host $message
     }
 }
