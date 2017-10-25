@@ -73,8 +73,8 @@ proc recordVersion {host vdict} {
     if {[catch {dict get $vdict version} version]} {set version ""}
     if {$version eq ""} {set version "доисторическая"}
     set vd [dict create version $version]
-    if {[dict exists $vdict time]} {
-	dict set vd timeDiff [expr {[dict get $vdict time] - [clock seconds]}]
+    if {[dict exists $vdict now]} {
+	dict set vd timeDiff [expr {[dict get $vdict now] - [clock seconds]}]
     }
     set ::hostVersion($host) $vd
 }
