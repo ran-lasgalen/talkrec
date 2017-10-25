@@ -37,7 +37,25 @@ proc tellState {chan replyId {format old}} {
     puts $chan $reply
 }
 
-proc tellErrors {chan replyId errors} {puts $chan [list $replyId errors $errors]}
+proc tellErrors {chan replyId errors {format old}} {
+    if {$format eq "yaml"} {set format json}
+    switch $format {
+	json {
+	    ::json::write indented 0
+	    set reply [::json::write object \
+			   replyId [scalarToJSON $replyId] \
+			   now [clock seconds] \
+			   errors [::json::write array [lmap e $errors {::json::write string $e}]]]
+	}
+	tcl {set reply [string map {"\n" " "} [list replyId $replyId now [clock seconds] errors $errors]]}
+	old {set reply [string map {"\n" " "} [list $replyId errors $errors]]}
+	default {
+	    safelog {error "неизвестный формат ответа $format"}
+	    return
+	}
+    }
+    puts $chan $reply
+}
 
 proc serveCmd {chan} {
     if {[chanHasError $chan err] || [eof $chan]} {catch {close $chan}; return}
