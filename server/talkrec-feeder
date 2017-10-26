@@ -95,11 +95,12 @@ proc getRecognition {soundFile server pipe} {
 	    catchDbg {
 		set duration [wavDuration $soundFile]
 		set yh [open $soundFile.yaml r]
-		set lines {}
-		while {[gets $yh line] >= 0} {
-		    if {![regexp {^recordTime\s*:} $line]} {lappend lines $line}
-		}
-		close $yh
+		try {
+		    set lines {}
+		    while {[gets $yh line] >= 0} {
+			if {![regexp {^recordTime\s*:} $line]} {lappend lines $line}
+		    }
+		} finally {close $yh}
 		lappend lines "recordTime: $duration"
 		createFileViaTmp $soundFile.yaml [join $lines "\n"]
 	    }
@@ -125,8 +126,7 @@ proc runQueue {} {
 	set reportFile [file join [dict get $::config queue] report]
 	set report [reportServerState]
 	set h [open $reportFile.tmp w]
-	puts $h $report
-	close $h
+	try {puts $h $report} finally {close $h}
 	file rename -force -- $reportFile.tmp $reportFile
     }
     # Обрабатываем очередь
