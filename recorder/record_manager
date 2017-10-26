@@ -165,13 +165,59 @@ proc handleReply {chan} {
     }
     array set state $reply
     if {[setIfExists state(headset) headset]} {
+	# если в ответе есть номер гарнитуры
+	# записываем, на каком она хосте
 	if {[info exists peer]} {
 	    set ::availableHeadsets($headset) $peer
 	} else {
 	    unset ::availableHeadsets($headset)
 	}
 	set ::headsetState($headset) [array get state]
-	updateWidgetsForHeadset $headset
+	if {[setIfExists state(employeeId) eid]} {
+	    # станция в курсе, что кто-то взял
+	    bindHeadsetToEmployee $eid $headset
+	} else {
+	    # сообщают, что гарнитура свободна
+	    # если мы взяли гарнитуру, нам могут не мгновенно сообщить,
+	    # что она наша, реагируем только через 2 секунды
+	    if {![info exists ::headsetTakeIntent($headset)] ||
+		[clock milliseconds] - $::headsetTakeIntent($headset) > 2000} {
+		bindHeadsetToEmployee $headset {}
+	    }
+	}
+    }
+    if {[setIfExists state(errors) errors]} {
+	# если errors - это точно нам, их отправляют в ответ на запрос
+	setLastErrors $errors
+    }
+}
+
+proc setLastErrors {errors} {
+    $::errorsLabel configure -text [join $errors "\n"]
+}
+
+proc bindHeadsetToEmployee {headset eid} {
+    # снимаем ожидание взятия, если оно было 
+    unset -nocomplain ::headsetTakeIntent($headset)
+    if {[setIfExists ::headsetsInUse(h_$headset) knownEid]} {
+	# если мы думали, что гарниьура у другого, то нет, не у него
+	if {$knownEid ne $eid} {unset -nocomplain ::headsetsInUse(e_$knownEid)}
+	# для гарнитуры - следующим шагом
+    }
+    # фиксируем актуальное состояние in use
+    if {$eid eq ""} {
+	unset -nocomplain ::headsetsInUse(h_$headset)
+    } else {
+	set ::headsetsInUse(h_$headset) $eid
+	set ::headsetsInUse(e_$eid) $headset
+    }
+    if {[info exists knownEid] && $knownEid ne $eid} {
+	# если только что отобрали гарнитуру, отображаем у того сотрудника
+	updateWidgetsForEmployee $knownEid {}
+    }
+    if {$eid ne ""} {
+	# и если гарнитура сейчас у кого-то, отображаем у текущего владельца
+	updateWidgetsForEmployee $eid $headset
     }
 }
 
@@ -206,6 +252,8 @@ proc createMainFrame {} {
     $mainFrame setwidget $sf
     set ::employeeFrame [$sf getframe]
     createEmployeesTable $::employeeFrame
+    set ::errorsLabel [label $::mainWindow.errors -text ""]
+    grid $::errorsLabel
     grid [button $::mainWindow.exit -command leaveAllHeadsets -text {Завершить рабочий день}]
 }
 
@@ -220,6 +268,7 @@ proc freeHeadsets {} {
 proc takeHeadset {employeeId headset} {
     leaveHeadset $employeeId
     if {[info exists ::availableHeadsets($headset)]} {
+	set ::headsetTakeIntent($headset) [clock milliseconds]
 	set ::headsetsInUse(e_$employeeId) $headset
 	set ::headsetsInUse(h_$headset) $employeeId
 	updateWidgetsForEmployee $employeeId $headset
@@ -365,7 +414,7 @@ proc updateWidgetsForEmployee {employeeId headset} {
 	}
     }
 }
-	    
+
 proc updateWidgetsForHeadset {headset} {
     if {![info exists ::headsetsInUse(h_$headset)]} return
     set employeeId $::headsetsInUse(h_$headset)
