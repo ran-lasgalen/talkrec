@@ -194,7 +194,10 @@ proc handleReply {chan} {
 }
 
 proc setLastErrors {errors} {
-    $::errorsLabel configure -text [join $errors "\n"]
+    set text [lindex $::lastErrorsFrame 0].text
+    $text replace 1.0 end [join $errors "\n"]
+    $text see 1.0
+    grid {*}$::lastErrorsFrame
 }
 
 proc bindHeadsetToEmployee {headset eid} {
@@ -253,9 +256,27 @@ proc createMainFrame {} {
     $mainFrame setwidget $sf
     set ::employeeFrame [$sf getframe]
     createEmployeesTable $::employeeFrame
-    set ::errorsLabel [label $::mainWindow.errors -text ""]
-    grid $::errorsLabel
-    grid [button $::mainWindow.exit -command leaveAllHeadsets -text {Завершить рабочий день}]
+    set lastErrorsFrame [createTextFrame .errors -width 80 -height 3 -foreground red]
+    grid [button $lastErrorsFrame.hide -text "Скрыть" -command [list grid forget $lastErrorsFrame]] -column 2 -row 0 -rowspan 2 -sticky ns
+    grid $lastErrorsFrame
+    grid [button .endDay -command leaveAllHeadsets -text {Завершить рабочий день}]
+    set ::lastErrorsFrame [concat [list $lastErrorsFrame] [grid info $lastErrorsFrame]]
+    grid forget $lastErrorsFrame
+}
+
+proc createTextFrame {path args} {
+    set frame [frame $path]
+    set text [text $path.text -yscrollcommand [list $path.ybar set] -xscrollcommand [list $path.xbar set] {*}$args]
+    set xbar [scrollbar $path.xbar -orient horizontal -command [list $path.text xview]]
+    set ybar [scrollbar $path.ybar -orient vertical -command [list $path.text yview]]
+    grid $text $ybar
+    grid $xbar
+    grid configure $text -sticky nwse
+    grid configure $ybar -sticky ns
+    grid configure $xbar -sticky we
+    grid columnconfigure $frame $text -weight 1
+    grid rowconfigure $frame $text -weight 1
+    return $frame
 }
 
 proc freeHeadsets {} {
