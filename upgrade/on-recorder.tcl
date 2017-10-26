@@ -11,7 +11,7 @@ proc main {} {
     # и копируем их в configDir
     run file copy -force -- {*}[glob -directory $::installerDir *.json] $::configDir
     if {![dict exists $::paths recorderBin]} {
-	dict set ::paths recorderBin [file normalize [file join $::talkrecDir recorder]]
+	dict set ::paths recorderBin [file normalize ~/recorder]
     }
     # втягиваем скрипты
     runExec rsync -av --delete rsync://$serverAddr:8873/recorder/ [dict get $::paths recorderBin]
