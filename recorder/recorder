@@ -81,7 +81,7 @@ proc serveCmd {chan} {
     try {
 	switch [dictGetOr "" $req req] {
 	    state {tellState $chan $replyId $reqFmt}
-	    internals {puts $chan [list $replyId ::record [array get ::record] ::config $::config]}
+	    internals {puts $chan [list $replyId ::record [array get ::record] ::config $::config ::recordState [array get ::recordState] ::intent [array get ::intent]]}
 	    version {puts $chan [simpleDictToJSON [dict create replyId $replyId version $::version now [clock seconds]] 0]}
 	    clearError {
 		# Иногда после отваливания иксов pulseaudio входит в ступор. Вроде прибить помогает.
@@ -135,6 +135,7 @@ proc serveCmd {chan} {
 		    if {$maxTime <= 0 || $maxTime > $::maxRecordTime} {
 			dict set params maxTime $::maxRecordTime
 		    }
+		    unset -nocomplain ::intent
 		    array set ::intent $params
 		    stopRecord
 		    checkRecordState
@@ -294,7 +295,7 @@ proc genRecordFileName {intentList} {
 	set startTime [clock seconds]
     }
     set t [clock format $startTime -format "%Y%m%d_%H%M%S"]
-    format "%s_%s_%d_%d.wav" $t $::intent(siteId) [dict get $::config headset] $startTime
+    format "%s_%s_%d_%d.wav" $t $intent(siteId) [dict get $::config headset] $startTime
 }
 
 proc doIntended {} {

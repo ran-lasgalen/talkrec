@@ -110,6 +110,7 @@ proc connectedToRecorder {peer} {
 proc disconnectedFromRecorder {peer} {
     foreach {headset p} [array get ::availableHeadsets] {
 	if {$p eq $peer} {
+	    unset ::availableHeadsets($headset)
 	    unset -nocomplain ::headsetState($headset)
 	    updateWidgetsForHeadset $headset
 	    break
@@ -175,7 +176,7 @@ proc handleReply {chan} {
 	set ::headsetState($headset) [array get state]
 	if {[setIfExists state(employeeId) eid]} {
 	    # станция в курсе, что кто-то взял
-	    bindHeadsetToEmployee $eid $headset
+	    bindHeadsetToEmployee $headset $eid
 	} else {
 	    # сообщают, что гарнитура свободна
 	    # если мы взяли гарнитуру, нам могут не мгновенно сообщить,
