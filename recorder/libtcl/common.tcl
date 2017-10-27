@@ -367,7 +367,11 @@ proc simpleDictToJSON {dict {indented 0}} {
 }
 
 proc scalarToJSON {value} {
-    if {[regexp {^-?\d+(.\d+)?([eE][+-]?\d+)?$} $value]} {
+    # json::json2dict не понимает чисел с ведущим нулем, если он не единственная цифра в целой части
+    # поэтому либо просто 0, либо 0.что-то, либо первая цифра не 0
+    if {$value eq "0" ||
+	[regexp {^-?0\.\d+([eE][+-]?\d+)?$} $value] ||
+	[regexp {^-?[1-9]\d*(.\d+)?([eE][+-]?\d+)?$} $value]} {
 	return $value
     } else {
 	::json::write string $value
