@@ -359,7 +359,7 @@ proc pluralRu {n one two five} {
     return "$n $five"
 }
 
-proc simpleDictToJSON {dict indented} {
+proc simpleDictToJSON {dict {indented 0}} {
     ::json::write indented $indented
     set object {}
     dict for {k v} $dict {lappend object $k [scalarToJSON $v]}
@@ -367,7 +367,11 @@ proc simpleDictToJSON {dict indented} {
 }
 
 proc scalarToJSON {value} {
-    if {[regexp {^-?\d+(.\d+)?([eE][+-]?\d+)?$} $value]} {
+    # json::json2dict не понимает чисел с ведущим нулем, если он не единственная цифра в целой части
+    # поэтому либо просто 0, либо 0.что-то, либо первая цифра не 0
+    if {$value eq "0" ||
+	[regexp {^-?0\.\d+([eE][+-]?\d+)?$} $value] ||
+	[regexp {^-?[1-9]\d*(.\d+)?([eE][+-]?\d+)?$} $value]} {
 	return $value
     } else {
 	::json::write string $value

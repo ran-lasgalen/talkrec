@@ -110,6 +110,7 @@ proc connectedToRecorder {peer} {
 proc disconnectedFromRecorder {peer} {
     foreach {headset p} [array get ::availableHeadsets] {
 	if {$p eq $peer} {
+	    unset ::availableHeadsets($headset)
 	    unset -nocomplain ::headsetState($headset)
 	    updateWidgetsForHeadset $headset
 	    break
@@ -128,14 +129,14 @@ proc chanPeer {chan} {
 # TODO be more careful on possible filling buffers
 proc sendRequest {chan request} {
     set peer [chanPeer $chan]
-    ::log::log debug "$peer <- $request"
+    safelog {debug "$peer <- $request"}
     if {[catch {puts $chan $request} err]} {
-	::log::log error "Ошибка отправки запроса к $peer: $err"
+	safelog {error "Ошибка отправки запроса к $peer: $err"}
 	cleanChan $chan
 	return 0
     }
     if {[fconfigure $chan -error] ne ""} {
-	::log::log error "Ошибка в соединении с $peer: [fconfigure $chan -error]"
+	safelog {error "Ошибка в соединении с $peer: [fconfigure $chan -error]"}
 	cleanChan $chan
 	return 0
     }
@@ -144,7 +145,7 @@ proc sendRequest {chan request} {
 
 proc requestState {peer} {
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    if {[sendRequest $chan [list [nextCommandId] state]]} {
+    if {[sendRequest $chan [simpleDictToJSON [dict create msgId [nextCommandId] req state]]]} {
 	after 500 [list requestState $peer]
     }
 }
@@ -165,19 +166,67 @@ proc handleReply {chan} {
     }
     array set state $reply
     if {[setIfExists state(headset) headset]} {
+	# если в ответе есть номер гарнитуры
+	# записываем, на каком она хосте
 	if {[info exists peer]} {
 	    set ::availableHeadsets($headset) $peer
 	} else {
 	    unset ::availableHeadsets($headset)
 	}
 	set ::headsetState($headset) [array get state]
-	updateWidgetsForHeadset $headset
+	if {[setIfExists state(employeeId) eid]} {
+	    # станция в курсе, что кто-то взял
+	    bindHeadsetToEmployee $headset $eid
+	} else {
+	    # сообщают, что гарнитура свободна
+	    # если мы взяли гарнитуру, нам могут не мгновенно сообщить,
+	    # что она наша, реагируем только через 2 секунды
+	    if {![info exists ::headsetTakeIntent($headset)] ||
+		[clock milliseconds] - $::headsetTakeIntent($headset) > 2000} {
+		bindHeadsetToEmployee $headset {}
+	    }
+	}
+    }
+    if {[setIfExists state(errors) errors]} {
+	# если errors - это точно нам, их отправляют в ответ на запрос
+	setLastErrors $errors
+    }
+}
+
+proc setLastErrors {errors} {
+    set text [lindex $::lastErrorsFrame 0].text
+    $text replace 1.0 end [join $errors "\n"]
+    $text see 1.0
+    grid {*}$::lastErrorsFrame
+}
+
+proc bindHeadsetToEmployee {headset eid} {
+    # снимаем ожидание взятия, если оно было 
+    unset -nocomplain ::headsetTakeIntent($headset)
+    if {[setIfExists ::headsetsInUse(h_$headset) knownEid]} {
+	# если мы думали, что гарниьура у другого, то нет, не у него
+	if {$knownEid ne $eid} {unset -nocomplain ::headsetsInUse(e_$knownEid)}
+	# для гарнитуры - следующим шагом
+    }
+    # фиксируем актуальное состояние in use
+    if {$eid eq ""} {
+	unset -nocomplain ::headsetsInUse(h_$headset)
+    } else {
+	set ::headsetsInUse(h_$headset) $eid
+	set ::headsetsInUse(e_$eid) $headset
+    }
+    if {[info exists knownEid] && $knownEid ne $eid} {
+	# если только что отобрали гарнитуру, отображаем у того сотрудника
+	updateWidgetsForEmployee $knownEid {}
+    }
+    if {$eid ne ""} {
+	# и если гарнитура сейчас у кого-то, отображаем у текущего владельца
+	updateWidgetsForEmployee $eid $headset
     }
 }
 
 proc nextCommandId {} {
     incr ::nextCommandId
-    format "%010d" $::nextCommandId
 }
 
 proc boldVersionOfFont {font} {
@@ -206,7 +255,27 @@ proc createMainFrame {} {
     $mainFrame setwidget $sf
     set ::employeeFrame [$sf getframe]
     createEmployeesTable $::employeeFrame
-    grid [button $::mainWindow.exit -command leaveAllHeadsets -text {Завершить рабочий день}]
+    set lastErrorsFrame [createTextFrame .errors -width 80 -height 3 -foreground red]
+    grid [button $lastErrorsFrame.hide -text "Скрыть" -command [list grid forget $lastErrorsFrame]] -column 2 -row 0 -rowspan 2 -sticky ns
+    grid $lastErrorsFrame
+    grid [button .endDay -command leaveAllHeadsets -text {Завершить рабочий день}]
+    set ::lastErrorsFrame [concat [list $lastErrorsFrame] [grid info $lastErrorsFrame]]
+    grid forget $lastErrorsFrame
+}
+
+proc createTextFrame {path args} {
+    set frame [frame $path]
+    set text [text $path.text -yscrollcommand [list $path.ybar set] -xscrollcommand [list $path.xbar set] {*}$args]
+    set xbar [scrollbar $path.xbar -orient horizontal -command [list $path.text xview]]
+    set ybar [scrollbar $path.ybar -orient vertical -command [list $path.text yview]]
+    grid $text $ybar
+    grid $xbar
+    grid configure $text -sticky nwse
+    grid configure $ybar -sticky ns
+    grid configure $xbar -sticky we
+    grid columnconfigure $frame $text -weight 1
+    grid rowconfigure $frame $text -weight 1
+    return $frame
 }
 
 proc freeHeadsets {} {
@@ -220,6 +289,7 @@ proc freeHeadsets {} {
 proc takeHeadset {employeeId headset} {
     leaveHeadset $employeeId
     if {[info exists ::availableHeadsets($headset)]} {
+	set ::headsetTakeIntent($headset) [clock milliseconds]
 	set ::headsetsInUse(e_$employeeId) $headset
 	set ::headsetsInUse(h_$headset) $employeeId
 	updateWidgetsForEmployee $employeeId $headset
@@ -237,11 +307,11 @@ proc startRecordOnHeadset {headset button mode} {
     if {![setIfExists ::headsetsInUse(h_$headset) employeeId]} return
     foreach {name id} [array get ::employee] {
 	if {$id == $employeeId} {
-	    set request [list [nextCommandId] start \
+	    set request [dict create msgId [nextCommandId] req start \
 			     siteId [dict get $::config siteId] \
 			     employeeId $id name $name \
 			     mode $mode]
-	    if {[sendRequest $chan $request]} {
+	    if {[sendRequest $chan [simpleDictToJSON $request]]} {
 		#debug "Sent request to $chan: $request"
 	    }
 	    break
@@ -253,8 +323,8 @@ proc stopRecordOnHeadset {headset button} {
     if {$button ne ""} {$button configure -state disabled -command {}}
     if {![setIfExists ::availableHeadsets($headset) peer]} return
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    set request [list [nextCommandId] stop]
-    if {[sendRequest $chan $request]} {
+    set request [dict create msgId [nextCommandId] req stop]
+    if {[sendRequest $chan [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
 }
@@ -263,8 +333,8 @@ proc forbidRecordOnHeadset {headset button} {
     if {$button ne ""} {$button configure -state disabled -command {}}
     if {![setIfExists ::availableHeadsets($headset) peer]} return
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    set request [list [nextCommandId] start mode forbid]
-    if {[sendRequest $chan $request]} {
+    set request [dict create msgId [nextCommandId] req start mode forbid]
+    if {[sendRequest $chan [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
 }
@@ -273,8 +343,8 @@ proc clearErrorOnHeadset {headset button} {
     if {$button ne ""} {$button configure -state disabled -command {}}
     if {![setIfExists ::availableHeadsets($headset) peer]} return
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    set request [list [nextCommandId] clearError]
-    if {[sendRequest $chan $request]} {
+    set request [dict create msgId [nextCommandId] req clearError]
+    if {[sendRequest $chan [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
 }
@@ -365,7 +435,7 @@ proc updateWidgetsForEmployee {employeeId headset} {
 	}
     }
 }
-	    
+
 proc updateWidgetsForHeadset {headset} {
     if {![info exists ::headsetsInUse(h_$headset)]} return
     set employeeId $::headsetsInUse(h_$headset)
@@ -383,7 +453,7 @@ proc leaveHeadset {employeeId} {
 
 proc leaveAllHeadsets {} {
     foreach chan [array names ::chanPeer] {
-	sendRequest $chan [list [nextCommandId] start mode forbid]
+	sendRequest $chan [simpleDictToJSON [dict create msgId [nextCommandId] req start mode forbid]]
     }
     foreach headset [array names ::availableHeadsets] {
 	if {[info exists ::headsetsInUse(h_$headset)]} {
