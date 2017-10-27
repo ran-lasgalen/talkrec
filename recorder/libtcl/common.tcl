@@ -359,7 +359,7 @@ proc pluralRu {n one two five} {
     return "$n $five"
 }
 
-proc simpleDictToJSON {dict indented} {
+proc simpleDictToJSON {dict {indented 0}} {
     ::json::write indented $indented
     set object {}
     dict for {k v} $dict {lappend object $k [scalarToJSON $v]}
