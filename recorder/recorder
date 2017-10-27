@@ -78,8 +78,11 @@ proc serveCmd {chan} {
     }
     foreach {reqFmt req} $typedReq break
     set replyId [dictGetOr 0 $req msgId]
+    dict unset req msgId
+    set cmd [dictGetOr "" $req req]
+    dict unset req req
     try {
-	switch [dictGetOr "" $req req] {
+	switch $cmd {
 	    state {tellState $chan $replyId $reqFmt}
 	    internals {puts $chan [list $replyId ::record [array get ::record] ::config $::config ::recordState [array get ::recordState] ::intent [array get ::intent]]}
 	    version {puts $chan [simpleDictToJSON [dict create replyId $replyId version $::version now [clock seconds]] 0]}
