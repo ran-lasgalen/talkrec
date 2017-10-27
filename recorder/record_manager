@@ -129,14 +129,14 @@ proc chanPeer {chan} {
 # TODO be more careful on possible filling buffers
 proc sendRequest {chan request} {
     set peer [chanPeer $chan]
-    ::log::log debug "$peer <- $request"
+    safelog {debug "$peer <- $request"}
     if {[catch {puts $chan $request} err]} {
-	::log::log error "Ошибка отправки запроса к $peer: $err"
+	safelog {error "Ошибка отправки запроса к $peer: $err"}
 	cleanChan $chan
 	return 0
     }
     if {[fconfigure $chan -error] ne ""} {
-	::log::log error "Ошибка в соединении с $peer: [fconfigure $chan -error]"
+	safelog {error "Ошибка в соединении с $peer: [fconfigure $chan -error]"}
 	cleanChan $chan
 	return 0
     }
@@ -145,7 +145,7 @@ proc sendRequest {chan request} {
 
 proc requestState {peer} {
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    if {[sendRequest $chan [list [nextCommandId] state]]} {
+    if {[sendRequest $chan [simpleDictToJSON [dict create msgId [nextCommandId] req state]]]} {
 	after 500 [list requestState $peer]
     }
 }
@@ -227,7 +227,6 @@ proc bindHeadsetToEmployee {headset eid} {
 
 proc nextCommandId {} {
     incr ::nextCommandId
-    format "%010d" $::nextCommandId
 }
 
 proc boldVersionOfFont {font} {
@@ -308,11 +307,11 @@ proc startRecordOnHeadset {headset button mode} {
     if {![setIfExists ::headsetsInUse(h_$headset) employeeId]} return
     foreach {name id} [array get ::employee] {
 	if {$id == $employeeId} {
-	    set request [list [nextCommandId] start \
+	    set request [dict create msgId [nextCommandId] req start \
 			     siteId [dict get $::config siteId] \
 			     employeeId $id name $name \
 			     mode $mode]
-	    if {[sendRequest $chan $request]} {
+	    if {[sendRequest $chan [simpleDictToJSON $request]]} {
 		#debug "Sent request to $chan: $request"
 	    }
 	    break
@@ -324,8 +323,8 @@ proc stopRecordOnHeadset {headset button} {
     if {$button ne ""} {$button configure -state disabled -command {}}
     if {![setIfExists ::availableHeadsets($headset) peer]} return
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    set request [list [nextCommandId] stop]
-    if {[sendRequest $chan $request]} {
+    set request [dict create msgId [nextCommandId] req stop]
+    if {[sendRequest $chan [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
 }
@@ -334,8 +333,8 @@ proc forbidRecordOnHeadset {headset button} {
     if {$button ne ""} {$button configure -state disabled -command {}}
     if {![setIfExists ::availableHeadsets($headset) peer]} return
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    set request [list [nextCommandId] start mode forbid]
-    if {[sendRequest $chan $request]} {
+    set request [dict create msgId [nextCommandId] req start mode forbid]
+    if {[sendRequest $chan [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
 }
@@ -344,8 +343,8 @@ proc clearErrorOnHeadset {headset button} {
     if {$button ne ""} {$button configure -state disabled -command {}}
     if {![setIfExists ::availableHeadsets($headset) peer]} return
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    set request [list [nextCommandId] clearError]
-    if {[sendRequest $chan $request]} {
+    set request [dict create msgId [nextCommandId] req clearError]
+    if {[sendRequest $chan [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
 }
@@ -454,7 +453,7 @@ proc leaveHeadset {employeeId} {
 
 proc leaveAllHeadsets {} {
     foreach chan [array names ::chanPeer] {
-	sendRequest $chan [list [nextCommandId] start mode forbid]
+	sendRequest $chan [simpleDictToJSON [dict create msgId [nextCommandId] req start mode forbid]]
     }
     foreach headset [array names ::availableHeadsets] {
 	if {[info exists ::headsetsInUse(h_$headset)]} {
