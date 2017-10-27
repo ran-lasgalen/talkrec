@@ -210,6 +210,12 @@ proc showCurrentErrorForEmployee {employeeId} {
     }
 }
 
+proc reportBgError {msg dbg} {
+    safelog {error [dictGetOr $msg $dbg -errorinfo]}
+}
+
+interp bgerror {} reportBgError
+
 proc bindHeadsetToEmployee {headset eid} {
     # снимаем ожидание взятия, если оно было 
     unset -nocomplain ::headsetTakeIntent($headset)
@@ -269,8 +275,50 @@ proc createMainFrame {} {
     grid [button $lastErrorsFrame.hide -text "Скрыть" -command [list grid forget $lastErrorsFrame]] -column 2 -row 0 -rowspan 2 -sticky ns
     grid $lastErrorsFrame
     grid [button .endDay -command leaveAllHeadsets -text {Завершить рабочий день}]
+    set ::showLogger 0
+    grid [checkbutton .showLogger -text {Показывать окно технического отчета} -command showOrHideLogger]
+    set loggerFrame [createTextFrame .logger -width 80 -height 12 -wrap none]
+    set ::showDebuggingOutput $::opt(-debug)
+    grid [checkbutton $loggerFrame.showDebuggingOutput -text {Показывать отладочный вывод} -command showOrHideDebug] -column 0 -row 2 -sticky w
+    grid $loggerFrame
     set ::lastErrorsFrame [concat [list $lastErrorsFrame] [grid info $lastErrorsFrame]]
     grid forget $lastErrorsFrame
+    set ::loggerFrame [concat [list $loggerFrame] [grid info $loggerFrame]]
+    grid forget $loggerFrame
+    ::log::lvCmdForall logToLogger
+    foreach level [::log::levels] {
+	set color [::log::lv2color $level]
+	if {$color ne ""} {
+	    $loggerFrame.text tag configure $level -foreground $color
+	}
+    }
+}
+
+proc showOrHideLogger {} {
+    set lf [lindex $::loggerFrame 0]
+    if {$::showLogger} {
+	if {[llength [grid info $lf]] == 0} {grid {*}$::loggerFrame}
+    } else {
+	if {[llength [grid info $lf]] > 0} {grid forget $lf}
+    }
+}
+
+proc showOrHideDebug {} {
+    if {$::showDebuggingOutput} {
+	::log::lvSuppress debug 0
+    } else {
+	::log::lvSuppress debug 1
+    }
+}
+
+proc logToLogger {level line} {
+    set text [lindex $::loggerFrame 0].text
+    if {[$text count -lines 1.0 end] >= 1000} {
+	$text delete 1.0 101.0
+    }
+    set vis [$text dlineinfo {end-1c linestart}]
+    $text insert end "\n$line" $level
+    if {$vis ne ""} {$text see {end-1c linestart}}
 }
 
 proc createTextFrame {path args} {
