@@ -194,10 +194,20 @@ proc handleReply {chan} {
 }
 
 proc setLastErrors {errors} {
-    set text [lindex $::lastErrorsFrame 0].text
+    set frame [lindex $::lastErrorsFrame 0]
+    set text $frame.text
     $text replace 1.0 end [join $errors "\n"]
     $text see 1.0
-    grid {*}$::lastErrorsFrame
+    if {[llength [grid info $frame]] == 0} {grid {*}$::lastErrorsFrame}
+}
+
+proc showCurrentErrorForEmployee {employeeId} {
+    if {![setIfExists ::headsetsInUse(e_$employeeId) headset]} return
+    if {![setIfExists ::headsetState($headset) state]} return
+    if {[dictGetOr "" $state state] eq "error"} {
+	set errorMessage [dictGetOr "" $state errorMessage]
+	if {$errorMessage ne ""} {setLastErrors [list $errorMessage]}
+    }
 }
 
 proc bindHeadsetToEmployee {headset eid} {
@@ -300,22 +310,36 @@ proc takeHeadset {employeeId headset} {
     }
 }
 
+proc employeeToRequest {employeeId} {
+    foreach {name id} [array get ::employee] {
+	if {$id == $employeeId} {
+	    return [dict create employeeId $id name $name]
+	}
+    }
+    return {}
+}
+
+proc headsetEmployeeToRequest {headset} {
+    if {[setIfExists ::headsetsInUse(h_$headset) employeeId]} {
+	employeeToRequest $employeeId
+    } else {
+	return {}
+    }
+}
+
+proc siteToRequest {} {dict create siteId [dict get $::config siteId]}
+
 proc startRecordOnHeadset {headset button mode} {
     if {$button ne ""} {$button configure -state disabled -command {}}
     if {![setIfExists ::availableHeadsets($headset) peer]} return
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    if {![setIfExists ::headsetsInUse(h_$headset) employeeId]} return
-    foreach {name id} [array get ::employee] {
-	if {$id == $employeeId} {
-	    set request [dict create msgId [nextCommandId] req start \
-			     siteId [dict get $::config siteId] \
-			     employeeId $id name $name \
-			     mode $mode]
-	    if {[sendRequest $chan [simpleDictToJSON $request]]} {
-		#debug "Sent request to $chan: $request"
-	    }
-	    break
-	}
+    set employeeData [headsetEmployeeToRequest $headset]
+    if {[llength $employeeData] == 0} return
+    set request [dict merge \
+		     [dict create msgId [nextCommandId] req start mode $mode] \
+		     [siteToRequest] $employeeData]
+    if {[sendRequest $chan [simpleDictToJSON $request]]} {
+	#debug "Sent request to $chan: $request"
     }
 }
 
@@ -333,7 +357,9 @@ proc forbidRecordOnHeadset {headset button} {
     if {$button ne ""} {$button configure -state disabled -command {}}
     if {![setIfExists ::availableHeadsets($headset) peer]} return
     if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    set request [dict create msgId [nextCommandId] req start mode forbid]
+    set request [dict merge \
+		     [dict create msgId [nextCommandId] req start mode forbid] \
+		     [siteToRequest] [headsetEmployeeToRequest $headset]]
     if {[sendRequest $chan [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
@@ -437,16 +463,15 @@ proc updateWidgetsForEmployee {employeeId headset} {
 }
 
 proc updateWidgetsForHeadset {headset} {
-    if {![info exists ::headsetsInUse(h_$headset)]} return
-    set employeeId $::headsetsInUse(h_$headset)
-    updateWidgetsForEmployee $employeeId $headset
+    if {[setIfExists ::headsetsInUse(h_$headset) employeeId]} {
+	updateWidgetsForEmployee $employeeId $headset
+    }
 }
 
 proc leaveHeadset {employeeId} {
-    if {[info exists ::headsetsInUse(e_$employeeId)]} {
-	set hs $::headsetsInUse(e_$employeeId)
-	forbidRecordOnHeadset $hs {}
+    if {[setIfExists ::headsetsInUse(e_$employeeId) hs]} {
 	unset -nocomplain ::headsetsInUse(h_$hs) ::headsetsInUse(e_$employeeId)
+	forbidRecordOnHeadset $hs {}
 	updateWidgetsForEmployee $employeeId {}
     }
 }
@@ -488,7 +513,8 @@ proc createEmployeesTable container {
 	$headsetSelector configure -postcommand [list setAvailableHeadsets $headsetSelector]
 	$headsetSelector set $::notTaken
 	bind $headsetSelector <<ComboboxSelected>> [list selectHeadsetFor $id $headsetSelector]
-	set stateLabel [label $container.st$id -text "Гарнитура не взята" -width 24 -justify right] 
+	set stateLabel [label $container.st$id -text "Гарнитура не взята" -width 24 -justify right]
+	bind $stateLabel <Button-1> [list showCurrentErrorForEmployee $id]
 	set recordButton [button $container.rb$id -state disabled -text "" -width 15]
 	set forbidButton [button $container.fb$id -state normal -text "" -width 10]
 	grid configure $nameLabel $headsetSelector $stateLabel $recordButton $forbidButton
