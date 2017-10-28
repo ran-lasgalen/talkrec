@@ -335,7 +335,7 @@ proc sitesWithRecordLinks {db} {
 proc sitesWithRecordLinksList {db} {
     set sites [$db allrows {select id,name from site where id in (select distinct site_id from talk) order by name}]
     lmap site $sites {
-	string cat {<a href="/empl/} [dict get $site id] {">} [dict get $site name] "</a>"
+	string cat {<a href="/empl/} [dict get $site id] {"><nobr>} [dict get $site name] "</nobr></a>"
     }
 }
 
