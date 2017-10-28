@@ -105,7 +105,7 @@ proc showRecords {{date {}}} {
 	    set prevnext [concat $prevdates $nextdates]
 	    if {[llength $prevnext]} {
 		append content "<div class=\"prevnext\">"
-		foreach d $prevnext {append content "<a href=\"/all/$d\">$d</a>&nbsp;&nbsp;&nbsp;&nbsp;"}
+		foreach d $prevnext {append content "<a href=\"/all/$d\">$d</a>&nbsp;&nbsp;&nbsp; "}
 		append content "</div>\n"
 	    }
 	    set records [db allrows {select talk.*, employee.name as ename, site.name as sname from talk left outer join site on talk.site_id = site.id left outer join employee on talk.employee_id = employee.id where made_on = :date order by started_at}]
@@ -329,7 +329,7 @@ proc speakersFromSite {db siteId} {
 }
 
 proc sitesWithRecordLinks {db} {
-    string cat {<div class="sitelinks">} [join [sitesWithRecordLinksList $db] "&nbsp;&nbsp;&nbsp;&nbsp;"] "</div>"
+    string cat {<div class="sitelinks">} [join [sitesWithRecordLinksList $db] "&nbsp;&nbsp;&nbsp; "] "</div>"
 }
 
 proc sitesWithRecordLinksList {db} {
@@ -359,7 +359,7 @@ proc genLinks {linkPairs} {
     }]
     string cat \
 	"<div class=\"links\">" \
-	[join $links "&nbsp;&nbsp;&nbsp;&nbsp;"] \
+	[join $links "&nbsp;&nbsp;&nbsp; "] \
 	"</div>"
 }
 
