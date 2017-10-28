@@ -105,7 +105,7 @@ proc showRecords {{date {}}} {
 	    set prevnext [concat $prevdates $nextdates]
 	    if {[llength $prevnext]} {
 		append content "<div class=\"prevnext\">"
-		foreach d $prevnext {append content "<a href=\"/$d\">$d</a>&nbsp;&nbsp;&nbsp;&nbsp;"}
+		foreach d $prevnext {append content "<a href=\"/all/$d\">$d</a>&nbsp;&nbsp;&nbsp;&nbsp;"}
 		append content "</div>\n"
 	    }
 	    set records [db allrows {select talk.*, employee.name as ename, site.name as sname from talk left outer join site on talk.site_id = site.id left outer join employee on talk.employee_id = employee.id where made_on = :date order by started_at}]
@@ -193,10 +193,6 @@ proc showReport {} {
     return "<html><head><title>$title</title></head><body>\n[links]\n<pre>\n$content\n</pre>\n</body></html>"
 }
 
-proc links {} {
-    return "<div><a href='/'>результаты распознавания</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href='/report'>в работе</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href='/queue'>очередь</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href='/stations'>станции записи</a></div>"
-}
-
 proc showQueue {} {
     set flags [lsort [glob -nocomplain -directory ~/queue *.flag]]
     set title [clock format [clock seconds] -format "Очередь на %H:%M:%S %d.%m.%Y"]
@@ -219,11 +215,161 @@ proc showQueue {} {
     return "<html><head><title>$title</title></head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
 }
 
+proc selectSite {} {
+    set db [::tdbc::postgres::connection create db -database talkrec]
+    try {
+	set title "Записи сотрудников по салонам"
+	set content ""
+	set siteLinks [sitesWithRecordLinksList $db]
+	if {[llength $siteLinks]} {
+	    append content "<ul\n>" \
+		[join [lmap sl $siteLinks {string cat "<li>" $sl "</li>"}] \n] \
+		"\n</ul>\n"
+	} else {
+	    append content "<p>Записей нет</p>\n"
+	}
+    } finally {$db close}
+    return "<html><head><title>$title</title></head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
+}
+
+proc selectEmployee {siteId} {
+    set db [::tdbc::postgres::connection create db -database talkrec]
+    try {
+	set siteName [lindex [$db allrows -as lists {select name from site where id = :siteId}] 0 0]
+	set title "Записи сотрудников в салоне $siteName"
+	set content [sitesWithRecordLinks $db]\n
+	set speakers [speakersFromSite $db $siteId]
+	if {[llength $speakers]} {
+	    append content "<ul>\n"
+	    foreach speaker $speakers {
+		append content "<li><a href=\"/empl/$siteId/[dict get $speaker id]\">[dict get $speaker name]</a></li>\n"
+	    }
+	    append content "</ul>\n"
+	} else {
+	    append content "<p>Записей нет</p>\n"
+	}
+    } finally {$db close}
+    return "<html><head><title>$title</title></head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
+}
+
+proc employeeTalks {siteId employeeId {date ""}} {
+    set db [::tdbc::postgres::connection create db -database talkrec]
+    try {
+	set siteName [lindex [$db allrows -as lists {select name from site where id = :siteId}] 0 0]
+	set speakerName [lindex [$db allrows -as lists {select name from employee where id = :employeeId}] 0 0]
+	if {$date eq ""} {
+	    set date [lindex [$db allrows -as lists {select max(made_on) from talk where site_id = :siteId and employee_id = :employeeId}] 0 0]
+	}
+	if {$date eq ""} {
+	    set prevnext {}
+	} else {
+	    set prevnext [concat \
+			      [lreverse [$db allrows -as lists {select distinct made_on from talk where site_id = :siteId and employee_id = :employeeId and made_on < :date order by made_on desc limit 3}]] \
+			      [list [list $date]] \
+			      [$db allrows -as lists {select distinct made_on from talk where site_id = :siteId and employee_id = :employeeId and made_on > :date order by made_on limit 3}]]
+	    # каждый элемент prevnext - одноэлементный список, состоящий из даты
+	    set prevnext [lmap el $prevnext {
+		set d [lindex $el 0]
+		if {$d eq $date} {
+		    list "" [dateRuAbbr $d]
+		} else {
+		    list "/empl/$siteId/$employeeId/$d" [dateRuAbbr $d]
+		}
+	    }]
+	}
+	set content [sitesWithRecordLinks $db]\n
+	set speakers [speakersFromSite $db $siteId]
+	append content [genLinks [lmap speaker $speakers {
+	    set id [dict get $speaker id]
+	    if {$id == $employeeId} continue
+	    list "/empl/$siteId/$id" [familyIO [dict get $speaker name]]
+	}]]
+	if {[llength $prevnext]} {
+	    append content [genLinks $prevnext]\n
+	}
+	set title "$speakerName в салоне $siteName"
+	if {$date eq ""} {
+	    append content "<p>Нет записей</p>\n"
+	} else {
+	    append title ", записи за [dateRu $date]"
+	    $db foreach row {select talk, started_at from talk where site_id = :siteId and employee_id = :employeeId and made_on = :date order by started_at} {
+		dict with row {
+		    if {![regexp {\d\d:\d\d:\d\d} $started_at tm]} {set tm $started_at}
+		    append content "<p>\n<em>$tm:</em> $talk</p>\n"
+		}
+	    }
+	}
+    } finally {$db close}
+    return "<html><head><title>$title</title></head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
+}
+
+proc familyIO {name} {
+    try {
+	set res {}
+	foreach w $name {
+	    if {[llength $res]} {lappend res [string cat [string index $w 0] .]} {lappend res $w}
+	}
+	return $res
+    } on error {} {return $name}
+}
+
+proc dateRuAbbr {date} {dateRuDict $date {01 янв 02 фев 03 мар 04 апр 05 мая 06 июн 07 июл 08 авг 09 сен 10 окт 11 ноя 12 дек}}
+
+proc dateRu {date} {dateRuDict $date {01 января 02 февраля 03 марта 04 апреля 05 мая 06 июня 07 июля 08 августа 09 сентября 10 октября 11 ноября 12 декабря}}
+
+proc dateRuDict {date dict} {
+    if {![regexp {^(\d\d\d\d)-(\d\d)-(\d\d)$} $date - y m d]} {return $date}
+    if {[clock format [clock seconds] -format "%Y"] eq $y} {set yt ""} {set yt " $y"}
+    if {[catch {dict get $dict $m} mt]} {return $date}
+    string cat $d " " $mt $yt
+}
+
+proc speakersFromSite {db siteId} {
+    $db allrows {select id,name from employee where id in (select distinct employee_id from talk where site_id = :siteId) order by name}
+}
+
+proc sitesWithRecordLinks {db} {
+    string cat {<div class="sitelinks">} [join [sitesWithRecordLinksList $db] "&nbsp;&nbsp;&nbsp;&nbsp;"] "</div>"
+}
+
+proc sitesWithRecordLinksList {db} {
+    set sites [$db allrows {select id,name from site where id in (select distinct site_id from talk) order by name}]
+    lmap site $sites {
+	string cat {<a href="/empl/} [dict get $site id] {">} [dict get $site name] "</a>"
+    }
+}
+
 proc withHTTP {text} {
+    set cl "Content-Length: [string bytelength $text]\n"
     if {[regexp {^\s*<html} $text]} {
-	string cat "HTTP/1.0 200 OK\nContent-Type: text/html; charset=utf-8\n\n" $text
+	string cat "HTTP/1.0 200 OK\nContent-Type: text/html; charset=utf-8\n$cl\n" $text
     } else {
-	string cat "HTTP/1.0 200 OK\nContent-Type: text/plain; charset=utf-8\n\n" $text
+	string cat "HTTP/1.0 200 OK\nContent-Type: text/plain; charset=utf-8\n$cl\n" $text
+    }
+}
+
+proc genLinks {linkPairs} {
+    set links [lmap lp $linkPairs {
+	foreach {link text} $lp break
+	if {$link eq ""} {
+	    string cat "<b><nobr>" [htmlEscape $text] "</nobr></b>"
+	} else {
+	    string cat "<a href=\"" $link "\"><nobr>" [htmlEscape $text] "</nobr></a>"
+	}
+    }]
+    string cat \
+	"<div class=\"links\">" \
+	[join $links "&nbsp;&nbsp;&nbsp;&nbsp;"] \
+	"</div>"
+}
+
+proc links {} {
+    genLinks {
+	{/empl {записи сотрудников}}
+	{/all {результаты распознавания}}
+	{/report {в работе}}
+	{/queue очередь}
+	{/stations {станции записи}}
     }
 }
 
@@ -240,11 +386,29 @@ proc serveRequest {chan addr port} {
 	{ /stations } {
 	    puts $chan [withHTTP [showRecordStations]]
 	}
-	{ /(\d\d\d\d-\d\d-\d\d) } {
+	{ /all } {
+	    puts $chan [withHTTP [showRecords]]
+	}
+	{ /all/(\d\d\d\d-\d\d-\d\d) } {
 	    puts $chan [withHTTP [showRecords [lindex $matches 1]]]
 	}
+	{ /empl } {
+	    puts $chan [withHTTP [selectSite]]
+	}
+	{ /empl/(\d+) } {
+	    puts $chan [withHTTP [selectEmployee [lindex $matches 1]]]
+	}
+	{ /empl/(\d+)/(\d+) } {
+	    puts $chan [withHTTP [employeeTalks [lindex $matches 1] [lindex $matches 2]]]
+	}
+	{ /empl/(\d+)/(\d+)/(\d\d\d\d-\d\d-\d\d) } {
+	    puts $chan [withHTTP [employeeTalks [lindex $matches 1] [lindex $matches 2] [lindex $matches 3]]]
+	}
+	{ / } {
+	    puts $chan [withHTTP [selectSite]]
+	}
 	default {
-	    puts $chan [withHTTP [showRecords]]
+	    puts $chan [withHTTP ""]
 	}
     }
     close $chan
