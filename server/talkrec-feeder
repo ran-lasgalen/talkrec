@@ -114,7 +114,7 @@ proc runQueue {} {
     rereadConfig
     # Чистим архив от старых файлов
     set now [clock seconds]
-    foreach arcFile [glob -nocomplain -directory $::soundArchive] {
+    foreach arcFile [glob -nocomplain -directory $::soundArchive *] {
 	catchDbg {
 	    if {$now - [file mtime $arcFile] > 172800} {
 		run file delete -- $arcFile
