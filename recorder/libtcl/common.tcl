@@ -437,8 +437,9 @@ proc asyncConnect {host port timeoutMs passData onConnect onDisconnect} {
 }
 
 proc asyncOnConnect {timeoutId onConnect connData} {
-    set chan [dict get $connData chan]
     after cancel $timeoutId
+    set chan [dict get $connData chan]
+    if {[chanHasError $chan err]} {return [asyncDisconnect $connData error $err]}
     fileevent $chan writable {}
     fconfigure $chan -blocking 0
     if {[catch [list uplevel #0 $onConnect [list $connData]] err dbg]} {
