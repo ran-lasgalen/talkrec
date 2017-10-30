@@ -454,6 +454,40 @@ proc asyncDisconnect {connData reason {message ""}} {
     catch {close [dict get $connData chan]}
 }
 
+# Читает одну непустую (не только из пробелов) строку из канала и выполняет
+# (на уровне #0) процедуру, передав ей connData и строку
+# procedure в общем случае - список из процедуры и первых ее параметров, но
+# чаще просто имя процедуры
+# если процедура возвращает пустую строку, это сигнал продолжать слушать.
+# если 2-элементный список - он передается двумя последними параметрами в asyncDisconnect
+# любой другой результат или ошибка выполнения передается в asyncDisconnect как сообщение об ошибке
+# Если ошибок чтения не было и в канале не eof, (снова) устанавливает таймаут чтения
+proc asyncOnReply {connData timeoutMs procedure} {
+    after cancel [list asyncDisconnect $connData replyTimeout]
+    try {
+	set chan [dict get $connData chan]
+	# Если есть ошибка в канале, логгировать это не нужно, поэтому не error, а return
+	if {[chanHasError $chan err]} {return [asyncDisconnect $connData error $err]}
+	while {![eof $chan]} {
+	    # а вот если ошибки в канале нет, а gets не сработал, то error
+	    if {[gets $chan line] < 0} break
+	    if {[regexp {^\s*$} $line]} continue
+	    set res [uplevel #0 $procedure [list $connData $line]]
+	    if {[catch {llength $res} len]} {set len 1}
+	    if {$len == 2} {
+		return [asyncDisconnect $connData {*}$res]
+	    } elseif {$len > 0} {
+		return [asyncDisconnect $connData error $res]
+	    }
+	}
+	if {[eof $chan]} {return [asyncDisconnect $connData disconnected "разорвал связь"]}
+    } on error {err dbg} {
+	debugStackTrace $dbg
+	return [asyncDisconnect $connData error $err]
+    }
+    after $timeoutMs [list asyncDisconnect $connData replyTimeout]
+}
+
 proc chanHasError {chan var} {
     upvar $var err
     set err [fconfigure $chan -error]
