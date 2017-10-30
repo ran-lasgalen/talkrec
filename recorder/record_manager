@@ -22,11 +22,31 @@ proc main {} {
     array set ::headsetsInUse {}
     set ::defaultBoldFont [boldVersionOfFont TkDefaultFont]
     createMainFrame
+    refillEmployeeControls
     foreach peer [dict get $::config recorders] {
 	if {[string first : $peer] < 0} {set peer [string cat $peer :17119]}
 	set ::onConnect($peer) [list connectedToRecorder $peer]
 	set ::onDisconnect($peer) [list disconnectedFromRecorder $peer]
 	after idle [list startConnectionLoop $peer]
+    }
+    asyncLoop maybeUpdateEmployees 2000 maybeUpdateEmployees
+}
+
+proc maybeUpdateEmployees {} {
+    try {
+	set employeesFile [configDictFile employees]
+	if {![fileModified $employeesFile]} return
+	set updated [readDict $employeesFile]
+	set currentList [lmap name [lsort [array names ::employee]] {list $name $::employee($name)}]
+	set updatedList [lmap name [lsort [dict keys $updated]] {list $name [dict get $updated $name]}]
+	if {$currentList ne $updatedList} {
+	    unset ::employee
+	    array set ::employee $updated
+	    refillEmployeeControls
+	}
+    } on error {err dbg} {
+	debugStackTrace $dbg
+	safelog {error $err}
     }
 }
 
@@ -537,16 +557,7 @@ proc leaveAllHeadsets {} {
     }
 }
 
-proc createEmployeesTable container {
-    proc setAvailableHeadsets {combobox} {
-	$combobox configure -values [concat $::notTaken [freeHeadsets]]
-    }
-    proc selectHeadsetFor {employeeId selector} {
-	set headset [$selector get]
-	if {![takeHeadset $employeeId $headset]} {
-	    $selector set $::notTaken
-	}
-    }
+proc createEmployeesTable {container} {
     grid anchor $container center
     set ::employeeControls [dict create]
     set hName [label $container.hName -font $::defaultBoldFont -text Имя]
@@ -554,27 +565,67 @@ proc createEmployeesTable container {
     set hRecord [label $container.hRecord -font $::defaultBoldFont -text Запись]
     grid configure $hName $hHeadset $hRecord
     grid configure $hName -sticky w
+    grid columnconfigure $container all -pad 8
+    grid rowconfigure $container all -pad 8
+}
+
+proc refillEmployeeControls {} {
+    set container $::employeeFrame
+    set row 0
+    foreach s [grid slaves $container] {
+	if {[catch {dict get [grid info $s] -row} r] || $r > 0} {grid forget $s}
+    }
+    set actualIds {}
     foreach name [lsort -dictionary [array names ::employee]] {
+	incr row
 	set id $::employee($name)
-	set nameLabel [label $container.nm$id -text $name]
-	set headsetSelector [ttk::combobox $container.hs$id -justify center -state readonly -width 3 -values $::notTaken]
-	$headsetSelector configure -postcommand [list setAvailableHeadsets $headsetSelector]
-	$headsetSelector set $::notTaken
-	bind $headsetSelector <<ComboboxSelected>> [list selectHeadsetFor $id $headsetSelector]
-	set stateLabel [label $container.st$id -text "Гарнитура не взята" -width 24 -justify right]
-	bind $stateLabel <Button-1> [list showCurrentErrorForEmployee $id]
-	set recordButton [button $container.rb$id -state disabled -text "" -width 15]
-	set forbidButton [button $container.fb$id -state normal -text "" -width 10]
-	grid configure $nameLabel $headsetSelector $stateLabel $recordButton $forbidButton
+	if {![dict exists $::employeeControls $id]} {
+	    dict set ::employeeControls $id [createEmployeeControls $container $id $name]
+	}
+	placeEmployeeControls $container $row [dict get $::employeeControls $id]
+	lappend actualIds $id
+    }
+    foreach i [dict keys $::employeeControls] {
+	if {$i ni $actualIds} {
+	    leaveHeadset $i
+	    destroy {*}[dict values $::employeeControls [dict get $::employeeControls $i]]
+	}
+    }
+}
+
+proc placeEmployeeControls {container row controls} {
+    dict with controls {
+	grid $nameLabel $headsetSelector $stateLabel $recordButton $forbidButton -in $container -row $row
 	grid configure $nameLabel -sticky w
 	grid configure $headsetSelector -sticky we
 	grid configure $stateLabel -sticky e
 	grid configure $recordButton -sticky we
 	grid configure $forbidButton -sticky we
-	dict set ::employeeControls $id [dict create nameLabel $nameLabel headsetSelector $headsetSelector stateLabel $stateLabel recordButton $recordButton forbidButton $forbidButton]
     }
-    grid columnconfigure $container all -pad 8
-    grid rowconfigure $container all -pad 8
+}
+
+proc createEmployeeControls {container id name} {
+    set nameLabel [label $container.nm$id -text $name]
+    set headsetSelector [ttk::combobox $container.hs$id -justify center -state readonly -width 3 -values $::notTaken]
+    $headsetSelector configure -postcommand [list setAvailableHeadsets $headsetSelector]
+    $headsetSelector set $::notTaken
+    bind $headsetSelector <<ComboboxSelected>> [list selectHeadsetFor $id $headsetSelector]
+    set stateLabel [label $container.st$id -text "Гарнитура не взята" -width 24 -justify right]
+    bind $stateLabel <Button-1> [list showCurrentErrorForEmployee $id]
+    set recordButton [button $container.rb$id -state disabled -text "" -width 15]
+    set forbidButton [button $container.fb$id -state normal -text "" -width 10]
+    dict create nameLabel $nameLabel headsetSelector $headsetSelector stateLabel $stateLabel recordButton $recordButton forbidButton $forbidButton
+}
+
+proc setAvailableHeadsets {combobox} {
+    $combobox configure -values [concat $::notTaken [freeHeadsets]]
+}
+
+proc selectHeadsetFor {employeeId selector} {
+    set headset [$selector get]
+    if {![takeHeadset $employeeId $headset]} {
+	$selector set $::notTaken
+    }
 }
 
 main
