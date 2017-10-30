@@ -522,3 +522,9 @@ proc md5OfDir {dir {sumFileDo ignore}} {
 	}
     } finally {cd $startDir}
 }
+
+proc dictAsSet {dict} {
+    set res {}
+    foreach k [lsort [dict keys $dict]] {lappend res $k [dict get $dict $k]}
+    return $res
+}
