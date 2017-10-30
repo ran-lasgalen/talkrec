@@ -37,9 +37,7 @@ proc maybeUpdateEmployees {} {
 	set employeesFile [configDictFile employees]
 	if {![fileModified $employeesFile]} return
 	set updated [readDict $employeesFile]
-	set currentList [lmap name [lsort [array names ::employee]] {list $name $::employee($name)}]
-	set updatedList [lmap name [lsort [dict keys $updated]] {list $name [dict get $updated $name]}]
-	if {$currentList ne $updatedList} {
+	if {[dictAsSet [array get ::employee]] ne [dictAsSet $updated]} {
 	    unset ::employee
 	    array set ::employee $updated
 	    refillEmployeeControls
