@@ -2,6 +2,7 @@
 
 set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
 source [file join $libtcldir common.tcl]
+source [file join $libtcldir install.tcl]
 package require tdbc
 package require tdbc::postgres
 
@@ -9,10 +10,15 @@ proc main {} {
     getOptions [configDictFile dispatcher] {}
     set ::config [readDict $::opt(-config)]
     set ::database [dictGetOr talkrec $::config database]
+    set ::irConfig [readDict [configDictFile install-recorder]]
+    if {[catch {dict get $::irConfig serverAddr} ::serverAddr]} {
+	error "В [configDictFile install-recorder] не указан serverAddr"
+    }
     array set ::hostState {}
     array set ::hostVersion {}
     asyncLoop runHostChecks 60000 runHostChecks
     after 8000 {asyncLoop fixHostCheckResults 60000 fixHostCheckResults}
+    socket -server acceptConfigRequest 17120
     vwait exit
 }
 
@@ -130,5 +136,47 @@ proc onReplyFromRecorder {connData} {
 proc versionRequest {} {simpleDictToJSON [dict create msgId [nextMessageId] req version] 0}
 
 proc nextMessageId {} {incr ::nextMessageId}
+
+proc acceptConfigRequest {sock addr port} {
+    fconfigure $sock -blocking 0 -buffering line
+    after 10000 [list configRequestTimeout $sock $addr $port]
+    fileevent $sock readable [list serveConfigRequest $sock $addr $port]
+}
+
+proc configRequestTimeout {chan addr port} {
+    catch {close $chan}
+    safelog {warning "Timeout waiting for config request from $addr"}
+}
+
+proc serveConfigRequest {chan addr port} {
+    after cancel [list configRequestTimeout $chan $addr $port]
+    if {[chanHasError $chan err] || [eof $chan]} {catch {close $chan}; return}
+    set line [gets $chan]
+    if {$line eq ""} {after 10000 [list configRequestTimeout $chan $addr $port]; return}
+    if {[catch {parseObject $line} req]} {
+	safelog {error "Непонятный запрос от $addr: $line"}
+	catch {close $chan}
+	return
+    }
+    set requestedConfigs [dictGetOr {} $req configurations]
+    if {[llength $requestedConfigs] == 0} {catch {close $chan}; return}
+    set db [::tdbc::postgres::connection create dbcr -database $::database]
+    try {
+	if {[catch {dict get [siteAndHeadsetForIP $db $addr] site_id} siteId]} {
+	    safelog {error "serveConfigRequest: $siteId"}
+	    return
+	}
+	set reply [dict create]
+	foreach cfg $requestedConfigs {
+	    switch $cfg {
+		employees {dict set reply $cfg [genEmployeesConfig $db $siteId 0]}
+		record_manager {dict set reply $cfg [genRecordManagerConfig $db $siteId $::serverAddr 0]}
+	    }
+	}
+	::json::write indented 0
+	set replyJson [::json::write object {*}$reply]
+	puts $chan $replyJson
+    } finally {$db close; catch {close $chan}}
+}
 
 runMain
