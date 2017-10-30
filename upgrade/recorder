@@ -51,9 +51,9 @@ proc upgradeOnIP {db ip} {
     close $sh
     file attributes $upgradeRecorder -permissions 0755
     # Создаем конфиги
-    createFileViaTmp [file join $upgraderDir recorder.json] [genRecorderConfig $ipConf [dict get $::config serverAddr]]
-    createFileViaTmp [file join $upgraderDir record_manager.json] [genRecordManagerConfig $db [dict get $ipConf site_id]]
-    createFileViaTmp [file join $upgraderDir employees.json] [genEmployeesConfig $db [dict get $ipConf site_id]]
+    createFileViaTmp [file join $upgraderDir recorder.json] [genRecorderConfig $ipConf [dict get $::config serverAddr] 1]
+    createFileViaTmp [file join $upgraderDir record_manager.json] [genRecordManagerConfig $db [dict get $ipConf site_id] [dict get $::config serverAddr] 1]
+    createFileViaTmp [file join $upgraderDir employees.json] [genEmployeesConfig $db [dict get $ipConf site_id] 1]
     if {$::opt(-gen-only)} return
     # Копируем апгрейдер
     runExec scp -rp $upgraderDir [sshWhere $ip]:

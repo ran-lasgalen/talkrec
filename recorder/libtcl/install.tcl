@@ -217,22 +217,22 @@ proc siteAndHeadsetForIP {db ip} {
     return $conf
 }
 
-proc genEmployeesConfig {db siteId} {
+proc genEmployeesConfig {db siteId indented} {
     set employees {}
     $db foreach -as lists r {select name, id from employee, site_employee where id = employee_id and site_id = :siteId order by name} {lappend employees {*}$r}
-    simpleDictToJSON $employees 1
+    simpleDictToJSON $employees $indented
 }
 
-proc genRecordManagerConfig {db siteId} {
-    ::json::write indented 1
+proc genRecordManagerConfig {db siteId serverAddr indented} {
+    ::json::write indented $indented
     set recorders [$db allrows -as lists {select ip from record_station where site_id = :siteId}]
     set recordersJSON [::json::write array {*}[lmap el $recorders {::json::write string $el}]]
-    ::json::write object siteId $siteId recorders $recordersJSON
+    ::json::write object server [::json::write string $serverAddr] siteId [scalarToJSON $siteId] recorders $recordersJSON
 }
 
-proc genRecorderConfig {ipConf serverAddr} {
+proc genRecorderConfig {ipConf serverAddr indented} {
     set user site[dict get $ipConf site_id]
-    ::json::write indented 1
+    ::json::write indented $indented
     ::json::write object \
 	headset [dict get $ipConf headset] \
 	recorderPort 17119 \

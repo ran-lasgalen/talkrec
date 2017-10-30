@@ -42,9 +42,9 @@ proc main {} {
     close $sh
     file attributes $installRecorder -permissions 0755
     # Создаем конфиги
-    createFileViaTmp [file join $::installerDir recorder.json] [genRecorderConfig $ipConf [dict get $::config serverAddr]]
-    createFileViaTmp [file join $::installerDir record_manager.json] [genRecordManagerConfig $db [dict get $ipConf site_id]]
-    createFileViaTmp [file join $::installerDir employees.json] [genEmployeesConfig $db [dict get $ipConf site_id]]
+    createFileViaTmp [file join $::installerDir recorder.json] [genRecorderConfig $ipConf [dict get $::config serverAddr] 1]
+    createFileViaTmp [file join $::installerDir record_manager.json] [genRecordManagerConfig $db [dict get $ipConf site_id] [dict get $::config serverAddr] 1]
+    createFileViaTmp [file join $::installerDir employees.json] [genEmployeesConfig $db [dict get $ipConf site_id] 1]
     if {$::opt(-gen-only)} return
     # Обеспечиваем возможность зайти по ssh
     if {[catch {runExec {*}[sshToStation true]}]} {
