@@ -23,12 +23,8 @@ proc main {} {
     set ::defaultBoldFont [boldVersionOfFont TkDefaultFont]
     createMainFrame
     refillEmployeeControls
-    foreach peer [dict get $::config recorders] {
-	if {[string first : $peer] < 0} {set peer [string cat $peer :17119]}
-	set ::onConnect($peer) [list connectedToRecorder $peer]
-	set ::onDisconnect($peer) [list disconnectedFromRecorder $peer]
-	after idle [list startConnectionLoop $peer]
-    }
+    set ::recorders [lmap r [dict get $::config recorders] {splitAddr $r 17119}]
+    foreach recorder $::recorders {startConnectionToRecorder $recorder}
     asyncLoop maybeUpdateEmployees 2000 maybeUpdateEmployees
     if {![catch {dict get $::config server} ::serverAddr]} {
 	safelog {info "Starting continuous reconfiguring from $::serverAddr"}
@@ -36,10 +32,51 @@ proc main {} {
     }
 }
 
+proc startConnectionToRecorder {recorder} {
+    if {$recorder in $::recorders} {
+	asyncConnect {*}$recorder 2000 {} onConnectToRecorder onDisconnectFromRecorder
+    }
+}
+
+proc connDataPeer {connData} {list [dict get $connData host] [dict get $connData port]}
+
+proc onConnectToRecorder {connData} {
+    safelog {debug [list onConnectToRecorder $connData]}
+    set chan [dict get $connData chan]
+    set peer [connDataPeer $connData]
+    if {[info exists ::peerConnData($peer)]} {
+	safelog {warning "Соединение с $peer уже есть"}
+	catch {close $chan}
+	return
+    }
+    set ::peerConnData($peer) $connData
+    fconfigure $chan -buffering line
+    after 1000 [list asyncDisconnect $connData replyTimeout]
+    fileevent $chan readable [list asyncOnReply $connData 1000 onReplyFromRecorder]
+    asyncLoop "request state from $peer" 500 [list requestState $connData]
+}
+
+proc onDisconnectFromRecorder {connData reason message} {
+    after cancel [list requestState $connData]
+    set peer [connDataPeer $connData]
+    foreach {headset p} [array get ::availableHeadsets] {
+	if {$p eq $peer} {
+	    unset ::availableHeadsets($headset)
+	    unset -nocomplain ::headsetState($headset)
+	    catchDbg {updateWidgetsForHeadset $headset}
+	    break
+	}
+    }
+    unset -nocomplain ::peerConnData($peer)
+    switch $reason {
+	error {safelog {error $message}}
+    }
+    after 10000 [list startConnectionToRecorder $peer]
+}
+
 proc onConnectToConfigurator {connData} {
     safelog {debug [list onConnectToConfigurator $connData]}
     set chan [dict get $connData chan]
-    if {[chanHasError $chan err]} {return [asyncDisconnect $connData error $err]}
     fconfigure $chan -buffering line
     after 4000 [list asyncDisconnect $connData replyTimeout]
     ::json::write indented 0
@@ -88,6 +125,7 @@ proc maybeUpdateEmployees {} {
 proc readConfig {configFile} {
     set conf [readDict $configFile]
     set errors {}
+    if {![dict exists $conf server]} {lappend errors "не указан адрес сервера"}
     if {![dict exists $conf recorders]} {lappend errors "не указаны адреса устройств записи (recorders)"}
     if {![dict exists $conf siteId]} {lappend errors "не указан идентификатор салона (siteId)"}
     if {[llength $errors] > 0} {error [listOfErrors "Ошибки конфигурации" $errors]}
@@ -106,114 +144,28 @@ proc setIfExists {checkVar setVar} {
     return $ie
 }
 
-proc startConnectionLoop {peer} {
-    if {![regexp {(.*)[: ](\d+)$} $peer - host port]} {return "Не умею соединяться с $peer"}
-    if {![info exists ::onConnect($peer)]} {return "Не знаю, что делать после соединения с $peer"}
-    if {[info exists ::peerChan($peer)]} {return "Соединение с $peer уже существует"}
-    if {[catch {socket -async $host $port} sock]} {
-	after 1000 [list startConnectionLoop $peer]
-	return "Проблема соединения с $peer (TCP порт $port на $host): $sock"
-    }
-    set ::peerChan($peer) $sock
-    set ::chanPeer($sock) $peer
-    set aid [after 1000 [list cleanAndReconnect $peer]]
-    fileevent $sock writable [list justConnected $peer $aid]
-}
-
-proc cleanAndReconnect {peer} {
-    if {[setIfExists ::onDisconnect($peer) onDisconnect]} {catch $onDisconnect}
-    if {[setIfExists ::peerChan($peer) chan]} {
-	catch {close $chan}
-	cleanChanCaches $chan
-	unset -nocomplain ::peerChan($peer) ::chanPeer($chan)
-	if {[info exists ::onConnect($peer)]} {
-	    after 1000 [list startConnectionLoop $peer]
-	}
-    }
-}
-
-proc cleanChan {chan} {
-    if {[setIfExists ::chanPeer($chan) peer]} {
-	cleanAndReconnect $peer
-    } else {
-	catch {close $chan}
-	cleanChanCaches $chan
-    }
-}
-
-proc cleanChanCaches {chan} {
-    unset -nocomplain ::incompleteCommand($chan) ::incompleteCommandStart($chan)
-}
-
-proc justConnected {peer timeoutId} {
-    after cancel $timeoutId
-    if {![setIfExists ::peerChan($peer) sock]} {cleanAndReconnect $peer; return}
-    if {[fconfigure $sock -error] ne ""} {cleanAndReconnect $peer; return}
-    fileevent $sock writable ""
-    fconfigure $sock -blocking 0 -buffering line
-    if {![setIfExists ::onConnect($peer) script]} {cleanAndReconnect $peer; return}
-    after idle $script
-}
-
-proc connectedToRecorder {peer} {
-    if {[setIfExists ::peerChan($peer) chan]} {
-	fileevent $chan readable [list handleReply $chan]
-    }
-    after idle [list requestState $peer]
-}
-
-proc disconnectedFromRecorder {peer} {
-    foreach {headset p} [array get ::availableHeadsets] {
-	if {$p eq $peer} {
-	    unset ::availableHeadsets($headset)
-	    unset -nocomplain ::headsetState($headset)
-	    updateWidgetsForHeadset $headset
-	    break
-	}
-    }
-}
-
-proc chanPeer {chan} {
-    if {[info exists ::chanPeer($chan)]} {
-	return $::chanPeer($chan)
-    } else {
-	return $chan
-    }
-}
-
 # TODO be more careful on possible filling buffers
-proc sendRequest {chan request} {
-    set peer [chanPeer $chan]
+proc sendRequest {connData request} {
+    set peer [connDataPeer $connData]
     safelog {debug "$peer <- $request"}
+    set chan [dict get $connData chan]
     if {[catch {puts $chan $request} err]} {
-	safelog {error "Ошибка отправки запроса к $peer: $err"}
-	cleanChan $chan
+	asyncDisconnect $connData error "Ошибка отправки запроса к $peer: $err"
 	return 0
     }
-    if {[fconfigure $chan -error] ne ""} {
-	safelog {error "Ошибка в соединении с $peer: [fconfigure $chan -error]"}
-	cleanChan $chan
+    if {[chanHasError $chan err]} {
+	asyncDisconnect $connData error "Ошибка в соединении с $peer: $err"
 	return 0
     }
     return 1
 }
 
-proc requestState {peer} {
-    if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
-    if {[sendRequest $chan [simpleDictToJSON [dict create msgId [nextCommandId] req state]]]} {
-	after 500 [list requestState $peer]
-    }
+proc requestState {connData} {
+    sendRequest $connData [simpleDictToJSON [dict create msgId [nextCommandId] req state]]
 }
 
-proc handleReply {chan} {
-    if {[chanHasError $chan err] || [eof $chan]} {cleanChan $chan; return}
-    if {![setIfExists ::chanPeer($chan) peer]} {
-	safelog {error "Oops! no peer for $chan"}
-	cleanChan $chan
-	return
-    }
-    set line [gets $chan]
-    if {[regexp {^\s*$} $line]} return
+proc onReplyFromRecorder {connData line} {
+    set peer [connDataPeer $connData]
     safelog {debug "$peer -> $line"}
     if {[catch {lindex [parseRecorderReply $line] 1} reply]} {
 	safelog {error "Проблема с запросом от $peer: $reply"}
@@ -224,7 +176,7 @@ proc handleReply {chan} {
 	# если в ответе есть номер гарнитуры
 	# записываем, на каком она хосте
 	if {[info exists peer]} {
-	    set ::availableHeadsets($headset) $peer
+	    set ::availableHeadsets($headset) $connData
 	} else {
 	    unset ::availableHeadsets($headset)
 	}
@@ -434,46 +386,42 @@ proc siteToRequest {} {dict create siteId [dict get $::config siteId]}
 
 proc startRecordOnHeadset {headset button mode} {
     if {$button ne ""} {$button configure -state disabled -command {}}
-    if {![setIfExists ::availableHeadsets($headset) peer]} return
-    if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
+    if {![setIfExists ::availableHeadsets($headset) connData]} return
     set employeeData [headsetEmployeeToRequest $headset]
     if {[llength $employeeData] == 0} return
     set request [dict merge \
 		     [dict create msgId [nextCommandId] req start mode $mode] \
 		     [siteToRequest] $employeeData]
-    if {[sendRequest $chan [simpleDictToJSON $request]]} {
+    if {[sendRequest $connData [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
 }
 
 proc stopRecordOnHeadset {headset button} {
     if {$button ne ""} {$button configure -state disabled -command {}}
-    if {![setIfExists ::availableHeadsets($headset) peer]} return
-    if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
+    if {![setIfExists ::availableHeadsets($headset) connData]} return
     set request [dict create msgId [nextCommandId] req stop]
-    if {[sendRequest $chan [simpleDictToJSON $request]]} {
+    if {[sendRequest $connData [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
 }
 
 proc forbidRecordOnHeadset {headset button} {
     if {$button ne ""} {$button configure -state disabled -command {}}
-    if {![setIfExists ::availableHeadsets($headset) peer]} return
-    if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
+    if {![setIfExists ::availableHeadsets($headset) connData]} return
     set request [dict merge \
 		     [dict create msgId [nextCommandId] req start mode forbid] \
 		     [siteToRequest] [headsetEmployeeToRequest $headset]]
-    if {[sendRequest $chan [simpleDictToJSON $request]]} {
+    if {[sendRequest $connData [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
 }
 
 proc clearErrorOnHeadset {headset button} {
     if {$button ne ""} {$button configure -state disabled -command {}}
-    if {![setIfExists ::availableHeadsets($headset) peer]} return
-    if {![setIfExists ::peerChan($peer) chan]} {cleanAndReconnect $peer; return}
+    if {![setIfExists ::availableHeadsets($headset) connData]} return
     set request [dict create msgId [nextCommandId] req clearError]
-    if {[sendRequest $chan [simpleDictToJSON $request]]} {
+    if {[sendRequest $connData [simpleDictToJSON $request]]} {
 	#debug "Sent request to $chan: $request"
     }
 }
@@ -580,8 +528,8 @@ proc leaveHeadset {employeeId} {
 }
 
 proc leaveAllHeadsets {} {
-    foreach chan [array names ::chanPeer] {
-	sendRequest $chan [simpleDictToJSON [dict create msgId [nextCommandId] req start mode forbid]]
+    foreach peer [array names ::peerConnData] {
+	sendRequest $::peerConnData($peer) [simpleDictToJSON [dict create msgId [nextCommandId] req start mode forbid]]
     }
     foreach headset [array names ::availableHeadsets] {
 	if {[info exists ::headsetsInUse(h_$headset)]} {
