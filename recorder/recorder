@@ -169,14 +169,14 @@ proc getJabraDev {} {
     switch $::record(soundSystem) {
 	pulse {
 	    set pipe [open "| pactl list short sources"]
-	    while {![eof $pipe]} {
-		if {[regexp {^\d+\s+(\S+)} [gets $pipe] - dev] && [regexp $deviceRE $dev]} {
-		    close $pipe
-		    set ::record(device) $dev
-		    return
+	    try {
+		while {![eof $pipe]} {
+		    if {[regexp {^\d+\s+(\S+)} [gets $pipe] - dev] && [regexp $deviceRE $dev]} {
+			set ::record(device) $dev
+			return
+		    }
 		}
-	    }
-	    close $pipe
+	    } finally {close $pipe}
 	    error noDevice
 	}
 	fake {
@@ -226,9 +226,13 @@ proc doStartRecord {} {
 # Главным образом обработчик завершения
 proc watchRecorder {intentList pipe} {
     # в stdout ничего интересного от программы не ждем
-    read $pipe
+    catch {read $pipe}
     if {[eof $pipe]} {
-	set resultFile [file join [file normalize [dict get $::config talks]] [genRecordFileName $intentList]]
+	if {[catch {file join [file normalize [dict get $::config talks]] [genRecordFileName $intentList]} resultFile dbg]} {
+	    catch {close $pipe}
+	    debugStackTrace $dbg
+	    safelog {error "Ошибка формирования имени результирующего файла: $resultFile"}
+	}
 	if {[catch {close $pipe} err] && $::recordState(state) ne "stopping"} {
 	    # если stopping, то ошибка ожидаемая, ибо kill
 	    # а тут реальная ошибка
@@ -241,8 +245,7 @@ proc watchRecorder {intentList pipe} {
 	    }
 	    catch {
 		set fh [open $::record(file).stderr a]
-		puts $fh $err
-		close $fh
+		try {puts $fh $err} finally {close $fh}
 		file rename -- $::record(file).stderr $resultFile.stderr
 	    }
 	    if {[file exists $resultFile.stderr]} {
