@@ -436,6 +436,18 @@ proc asyncConnect {host port timeoutMs passData onConnect onDisconnect} {
     fileevent $sock writable [list asyncOnConnect $timeoutId $onConnect $connData]
 }
 
+proc connDataChan {connData} {dict get $connData chan}
+
+proc connDataHost {connData} {dict get $connData host}
+
+proc connDataPeer {connData} {list [dict get $connData host] [dict get $connData port]}
+
+proc connDataPeerColon {connData} {
+    set host [connDataHost $connData]
+    if {[string first : $host] >= 0} {set host "\[$host]"}
+    string cat $host : [dict get $connData port]
+}
+
 proc asyncOnConnect {timeoutId onConnect connData} {
     after cancel $timeoutId
     set chan [dict get $connData chan]
