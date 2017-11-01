@@ -14,7 +14,7 @@ proc main {} {
     if {![dict exists $::paths recorderBin]} {
 	dict set ::paths recorderBin [file normalize [file join $::talkrecDir recorder]]
     }
-    md5OfDir [dict get $::paths recorderBin] update
+    set version [md5OfDir [dict get $::paths recorderBin] update]
     if {[catch {readDict [configDictFile install-recorder]} config]} {set config {}}
     set defaultConfig [dict create remoteUser user]
     set ::config [dict merge $defaultConfig $config]
@@ -28,7 +28,45 @@ proc main {} {
     puts "... найден."
     set db [::tdbc::postgres::connection create db -database talkrec]
     try {
-	foreach ip $::argv {upgradeOnIP $db $ip}
+	set ipList {}
+	set unavList {}
+	set uninstList {}
+	set sameVersion {}
+	set successList {}
+	set failList {}
+	foreach arg $::argv {
+	    if {[regexp {^\d+\.\d+\.\d+\.\d+$} $arg]} {
+		if {$arg ni $ipList} {lappend ipList $arg}
+	    } else {
+		$db foreach station {select ip, state, version from record_station where site_id in (select id from site where name ~ :arg) order by site_id, ip} {
+		    set ip [dict get $station ip]
+		    if {[dictGetOr X $station version] eq $version} {
+			if {$ip ni $sameVersion} {lappend sameVersion $ip}
+		    } elseif {[dictGetOr X $station version] eq "ПО не установлено"} {
+			if {$ip ni $uninstList} {lappend uninstList $ip}
+		    } elseif {[dictGetOr X $station state] eq "недоступна"} {
+			if {$ip ni $unavList} {lappend unavList $ip}
+		    } else {
+			if {$ip ni $ipList} {lappend ipList $ip}
+		    }
+		}
+	    }
+	}
+	foreach ip $ipList {
+	    try {
+		upgradeOnIP $db $ip
+		lappend successList $ip
+	    } on error {err dbg} {
+		debugStackTrace $dbg
+		lappend failList $ip
+	    }
+	}
+	puts "Итоги:"
+	if {[llength $sameVersion]} {puts "Не требуют обновления [join $sameVersion {, }]"}
+	if {[llength $uninstList]} {puts "ПО не установлено (требуется установка) на [join $uninstList {, }]"}
+	if {[llength $unavList]} {puts "Недоступны: [join $unavList {, }]"}
+	if {[llength $successList]} {puts "Успешная установка на [join $successList {, }]"}
+	if {[llength $failList]} {puts "Не удалась установка на [join $failList {, }]"}
     } finally {$db close}
 }
 
@@ -56,10 +94,12 @@ proc upgradeOnIP {db ip} {
     createFileViaTmp [file join $upgraderDir employees.json] [genEmployeesConfig $db [dict get $ipConf site_id] 1]
     if {$::opt(-gen-only)} return
     # Копируем апгрейдер
-    runExec scp -rp $upgraderDir [sshWhere $ip]:
+    runExec scp -o BatchMode=yes -rp $upgraderDir [sshWhere $ip]:
     # и запускаем
     if {$::opt(-debug)} {set dbgarg --debug} else {set dbgarg {}}
     runExec {*}[concat [sshToStation $ip ./$upgradeRecorder --sudo-pw $::sudoPassword] $dbgarg]
+    after 1000
+    runExec {*}[sshToStation $ip systemctl --user restart recorder]
     file delete -force -- $upgraderDir
 }
 
