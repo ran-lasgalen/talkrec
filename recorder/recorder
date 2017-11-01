@@ -6,7 +6,9 @@ package require yaml
 
 proc acceptConn {sock addr port} {
     fconfigure $sock -blocking 0 -buffering line
-    fileevent $sock readable [list serveCmd $sock]
+    set connData [dict create chan $sock host $addr port $port pass {} onDisconnect ignoreArgs]
+    after 10000 [list asyncDisconnect $connData replyTimeout]
+    fileevent $sock readable [list asyncOnReply $connData 10000 serveCmd]
 }
 
 proc tellState {chan replyId {format old}} {
@@ -57,11 +59,9 @@ proc tellErrors {chan replyId errors {format old}} {
     puts $chan $reply
 }
 
-proc serveCmd {chan} {
-    if {[chanHasError $chan err] || [eof $chan]} {catch {close $chan}; return}
-    set line [gets $chan]
-    if {[regexp {^\s*$} $line]} return
-    safelog {debug "запрос: $line"}
+proc serveCmd {connData line} {
+    safelog {debug "запрос от [connDataPeerColon $connData]: $line"}
+    set chan [connDataChan $connData]
     if {[catch {parseObjectTyped $line} typedReq]} {
 	if {![regexp {^\s*(\d+)\s+(.*)} $line - replyId oldReq]} {
 	    set oldReq $line
@@ -155,8 +155,9 @@ proc serveCmd {chan} {
 	}
     } on error {err dbg} {
 	debugStackTrace $dbg
-	tellErrors $chan $replyId [list "Oops! $err"] $reqFmt
+	catch {tellErrors $chan $replyId [list "Oops! $err"] $reqFmt}
     }
+    return ""
 }
 
 # На выходе ::record(soundSystem) из конфига
