@@ -34,11 +34,10 @@ proc runHostChecks {} {
 proc onConnectToRecorder {connData} {
     safelog {debug [list onConnectToRecorder $connData]}
     set chan [connDataChan $connData]
-    if {[chanHasError $chan err]} {return [asyncDisconnect $connData error $err]}
     fconfigure $chan -buffering line
     after 4000 [list asyncDisconnect $connData replyTimeout]
     catchDbg {puts $chan [versionRequest]}
-    fileevent $chan readable [list onReplyFromRecorder $connData]
+    fileevent $chan readable [list asyncOnReply $connData 4000 serveReplyFromRecorder]
 }
 
 proc recordError {connData message} {
@@ -109,28 +108,13 @@ proc onDisconnectFromRecorder {connData reason message} {
     }
 }
 
-proc onReplyFromRecorder {connData} {
-    after cancel [list asyncDisconnect $connData replyTimeout]
-    try {
-	set chan [connDataChan $connData]
-	if {[chanHasError $chan err]} {return [asyncDisconnect $connData error $err]}
-	while {1} {
-	    if {[catch {gets $chan line} len]} {return [asyncDisconnect $connData error $len]}
-	    if {$len < 0} break
-	    if {[regexp {^\s*$} $line]} continue
-	    try {
-		set obj [parseObject $line]
-		return [asyncDisconnect $connData ok [dict filter $obj key version now]]
-	    } on error {err} {
-		return [asyncDisconnect $connData ok ""]
-	    }
-	}
-	if {[eof $chan]} {return [asyncDisconnect $connData disconnected "разорвал связь"]}
-    } on error {err dbg} {
+proc serveReplyFromRecorder {connData line} {
+    safelog {debug [list serveReplyFromRecorder $connData $line]}
+    if {[catch {parseObject $line} obj dbg]} {
 	debugStackTrace $dbg
-	safelog {error "onReplyFromRecorder: $err\n  $connData"}
+	return [list ok {}]
     }
-    after 4000 [list asyncDisconnect $connData replyTimeout]
+    return [list ok [dict filter $obj key version now]]
 }
 
 proc versionRequest {} {simpleDictToJSON [dict create msgId [nextMessageId] req version] 0}
@@ -138,6 +122,7 @@ proc versionRequest {} {simpleDictToJSON [dict create msgId [nextMessageId] req 
 proc nextMessageId {} {incr ::nextMessageId}
 
 proc acceptConfigRequest {sock addr port} {
+    safelog {debug [list acceptConfigRequest $sock $addr $port]}
     fconfigure $sock -blocking 0 -buffering line
     set connData [dict create chan $sock host $addr port $port pass {} onDisconnect configRequestDisconnect]
     after 10000 [list asyncDisconnect $connData replyTimeout]
