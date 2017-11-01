@@ -33,7 +33,7 @@ proc runHostChecks {} {
 
 proc onConnectToRecorder {connData} {
     safelog {debug [list onConnectToRecorder $connData]}
-    set chan [dict get $connData chan]
+    set chan [connDataChan $connData]
     if {[chanHasError $chan err]} {return [asyncDisconnect $connData error $err]}
     fconfigure $chan -buffering line
     after 4000 [list asyncDisconnect $connData replyTimeout]
@@ -42,7 +42,7 @@ proc onConnectToRecorder {connData} {
 }
 
 proc recordError {connData message} {
-    if {[catch {dict get $connData host} host]} {
+    if {[catch {connDataHost $connData} host]} {
 	safelog {error "Нет ключа host в [list $connData]\n  +проблема: $message"}
     } else {
 	recordState $host $message
@@ -97,7 +97,7 @@ proc onDisconnectFromRecorder {connData reason message} {
 	    }
 	}
 	ok {
-	    if {[catch {dict get $connData host} host]} {
+	    if {[catch {connDataHost $connData} host]} {
 		safelog {error "Нет ключа host в [list $connData]"}
 	    } else {
 		safelog {debug "$host [list $message]"}
@@ -112,9 +112,9 @@ proc onDisconnectFromRecorder {connData reason message} {
 proc onReplyFromRecorder {connData} {
     after cancel [list asyncDisconnect $connData replyTimeout]
     try {
-	set chan [dict get $connData chan]
+	set chan [connDataChan $connData]
 	if {[chanHasError $chan err]} {return [asyncDisconnect $connData error $err]}
-	while (1) {
+	while {1} {
 	    if {[catch {gets $chan line} len]} {return [asyncDisconnect $connData error $len]}
 	    if {$len < 0} break
 	    if {[regexp {^\s*$} $line]} continue
@@ -139,32 +139,36 @@ proc nextMessageId {} {incr ::nextMessageId}
 
 proc acceptConfigRequest {sock addr port} {
     fconfigure $sock -blocking 0 -buffering line
-    after 10000 [list configRequestTimeout $sock $addr $port]
-    fileevent $sock readable [list serveConfigRequest $sock $addr $port]
+    set connData [dict create chan $sock host $addr port $port pass {} onDisconnect configRequestDisconnect]
+    after 10000 [list asyncDisconnect $connData replyTimeout]
+    fileevent $sock readable [list asyncOnReply $connData 10000 serveConfigRequest]
 }
 
-proc configRequestTimeout {chan addr port} {
-    catch {close $chan}
-    safelog {warning "Timeout waiting for config request from $addr"}
+proc configRequestDisconnect {connData reason message} {
+    safelog {debug [list configRequestDisconnect $connData $reason $message]}
+    switch $reason {
+	waitTimeout {
+	    safelog {warning "Истекло время ожидания запроса конфигурациии от [connDataHost $connData]"}
+	}
+	error {
+	    safelog {error "Ошибка в соединении [connDataHost $connData] с конфигуратором: $message"}
+	}
+    }
 }
 
-proc serveConfigRequest {chan addr port} {
-    after cancel [list configRequestTimeout $chan $addr $port]
-    if {[chanHasError $chan err] || [eof $chan]} {catch {close $chan}; return}
-    set line [gets $chan]
-    if {$line eq ""} {after 10000 [list configRequestTimeout $chan $addr $port]; return}
-    if {[catch {parseObject $line} req]} {
-	safelog {error "Непонятный запрос от $addr: $line"}
-	catch {close $chan}
-	return
+proc serveConfigRequest {connData line} {
+    safelog {debug [list serveConfigRequest $connData $line]}
+    if {[catch {parseObject $line} req dbg]} {
+	debugStackTrace $dbg
+	return [list error "serveConfigRequest: непонятный запрос от [connDataHost $connData]: $line"]
     }
     set requestedConfigs [dictGetOr {} $req configurations]
-    if {[llength $requestedConfigs] == 0} {catch {close $chan}; return}
+    if {[llength $requestedConfigs] == 0} {return {ok "serveConfigRequest: никаких конфигураций не спросили"}}
     set db [::tdbc::postgres::connection create dbcr -database $::database]
     try {
-	if {[catch {dict get [siteAndHeadsetForIP $db $addr] site_id} siteId]} {
-	    safelog {error "serveConfigRequest: $siteId"}
-	    return
+	if {[catch {dict get [siteAndHeadsetForIP $db [connDataHost $connData]] site_id} siteId dbg]} {
+	    debugStackTrace $dbg
+	    return [list error "serveConfigRequest: $siteId"]
 	}
 	set reply [dict create]
 	foreach cfg $requestedConfigs {
@@ -175,8 +179,9 @@ proc serveConfigRequest {chan addr port} {
 	}
 	::json::write indented 0
 	set replyJson [::json::write object {*}$reply]
-	puts $chan $replyJson
-    } finally {$db close; catch {close $chan}}
+	puts [connDataChan $connData] $replyJson
+    } finally {$db close}
+    return {ok {}}
 }
 
 runMain
