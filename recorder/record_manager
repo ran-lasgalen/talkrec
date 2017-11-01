@@ -27,7 +27,7 @@ proc main {} {
     foreach recorder $::recorders {startConnectionToRecorder $recorder}
     asyncLoop maybeUpdateEmployees 2000 maybeUpdateEmployees
     if {![catch {dict get $::config server} ::serverAddr]} {
-	safelog {info "Starting continuous reconfiguring from $::serverAddr"}
+	safelog {info "Сервер конфигурации: $::serverAddr"}
 	asyncConnect $::serverAddr 17120 2000 {} onConnectToConfigurator onDisconnectFromConfigurator
     }
 }
@@ -38,11 +38,9 @@ proc startConnectionToRecorder {recorder} {
     }
 }
 
-proc connDataPeer {connData} {list [dict get $connData host] [dict get $connData port]}
-
 proc onConnectToRecorder {connData} {
     safelog {debug [list onConnectToRecorder $connData]}
-    set chan [dict get $connData chan]
+    set chan [connDataChan $connData]
     set peer [connDataPeer $connData]
     if {[info exists ::peerConnData($peer)]} {
 	safelog {warning "Соединение с $peer уже есть"}
@@ -69,14 +67,20 @@ proc onDisconnectFromRecorder {connData reason message} {
     }
     unset -nocomplain ::peerConnData($peer)
     switch $reason {
-	error {safelog {error $message}}
+	error {
+	    if {$message ne "connection refused"} {
+		safelog {error "Ошибка от станции записи [connDataPeerColon $connData]: $message"}
+	    } else {
+		safelog {debug "Станция записи [connDataPeerColon $connData] не работает"}
+	    }
+	}
     }
     after 10000 [list startConnectionToRecorder $peer]
 }
 
 proc onConnectToConfigurator {connData} {
     safelog {debug [list onConnectToConfigurator $connData]}
-    set chan [dict get $connData chan]
+    set chan [connDataChan $connData]
     fconfigure $chan -buffering line
     after 4000 [list asyncDisconnect $connData replyTimeout]
     ::json::write indented 0
@@ -88,11 +92,11 @@ proc onConnectToConfigurator {connData} {
 proc onDisconnectFromConfigurator {connData reason message} {
     safelog {debug [list onDisconnectFromConfigurator $connData $reason $message]}
     switch $reason {
-	connectTimeout {safelog {warning "Сервер [dict get $connData host] недоступен"}}
-	replyTimeout {safelog {warning "Сервер [dict get $connData host] не ответил"}}
-	error {safelog {warning "Ошибка от сервера [dict get $connData host]:[dict get $connData port]: $message"}}
+	connectTimeout {safelog {warning "Сервер конфигурации [connDataHost $connData] недоступен"}}
+	replyTimeout {safelog {warning "Сервер конфигурации [connDataHost $connData] не ответил"}}
+	error {safelog {warning "Ошибка от сервера конфигурации [connDataPeerColon $connData]: $message"}}
     }
-    after 60000 [list asyncConnect [dict get $connData host] [dict get $connData port] 2000 {} onConnectToConfigurator onDisconnectFromConfigurator]
+    after 60000 [list asyncConnect {*}[connDataPeer $connData] 2000 {} onConnectToConfigurator onDisconnectFromConfigurator]
 }
 
 proc onReplyFromConfigurator {connData line} {
@@ -148,7 +152,7 @@ proc setIfExists {checkVar setVar} {
 proc sendRequest {connData request} {
     set peer [connDataPeer $connData]
     safelog {debug "$peer <- $request"}
-    set chan [dict get $connData chan]
+    set chan [connDataChan $connData]
     if {[catch {puts $chan $request} err]} {
 	asyncDisconnect $connData error "Ошибка отправки запроса к $peer: $err"
 	return 0
