@@ -55,8 +55,8 @@ proc onConnectToRecorder {connData} {
 }
 
 proc onDisconnectFromRecorder {connData reason message} {
-    after cancel [list requestState $connData]
     set peer [connDataPeer $connData]
+    after cancel [list asyncLoop "request state from $peer" 500 [list requestState $connData]]
     foreach {headset p} [array get ::availableHeadsets] {
 	if {$p eq $peer} {
 	    unset ::availableHeadsets($headset)
@@ -165,7 +165,9 @@ proc sendRequest {connData request} {
 }
 
 proc requestState {connData} {
-    sendRequest $connData [simpleDictToJSON [dict create msgId [nextCommandId] req state]]
+    if {![sendRequest $connData [simpleDictToJSON [dict create msgId [nextCommandId] req state]]]} {
+	return -code break
+    }
 }
 
 proc onReplyFromRecorder {connData line} {
