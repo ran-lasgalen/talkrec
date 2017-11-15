@@ -229,6 +229,7 @@ proc watchRecorder {intentList pipe} {
     # в stdout ничего интересного от программы не ждем
     catch {read $pipe}
     if {[eof $pipe]} {
+	fconfigure $pipe -blocking 1
 	if {[catch {file join [file normalize [dict get $::config talks]] [genRecordFileName $intentList]} resultFile dbg]} {
 	    catch {close $pipe}
 	    debugStackTrace $dbg

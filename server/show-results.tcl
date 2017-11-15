@@ -411,7 +411,7 @@ proc serveRequest {chan addr port} {
 	    puts $chan [withHTTP ""]
 	}
     }
-    close $chan
+    catch {close $chan}
 }
 
 getOptions - {}

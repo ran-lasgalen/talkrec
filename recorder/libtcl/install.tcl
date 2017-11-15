@@ -98,6 +98,7 @@ proc waitProc {pipe id cmd} {
 	puts "$id: $line"
     }
     if {[eof $pipe]} {
+	fconfigure $pipe -blocking 1
 	if {[catch {close $pipe} err]} {
 	    puts [prefixLines "$id: " "$cmd:\n  $err\nrestart after 12 sec"]
 	} else {

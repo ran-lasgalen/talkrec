@@ -84,7 +84,8 @@ proc getRecognition {soundFile server pipe} {
     }
     if {[eof $pipe]} {
 	jobStoppedOnServer $soundFile $server
-	if {[catch {run close $pipe} err dbg]} {
+	fconfigure $pipe -blocking 1
+	if {[catch {close $pipe} err dbg]} {
 	    debugStackTrace $dbg
 	    safelog {error "Проблема при распознавании $soundFile:\n$err"}
 	    errorOnServer $server
