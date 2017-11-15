@@ -137,6 +137,11 @@ proc runQueue {} {
 	if {![file exists $soundFile]} {
 	    catch {run file delete -- $flagFile}
 	    continue
+	} elseif {$now - [file mtime $soundFile] > 15*86400} {
+	    # файл в очереди слишком долго, и никто не решил проблему — удаляем
+	    catch {run file delete -- $flagFile $soundFile $soundFile.yaml $soundFile.json}
+	    safelog {warning "$soundFile слишком долго в очереди, удаляем"}
+	    continue
 	}
 	if {[needWaitMore $flagFile]} continue
 	set server [selectServerFor $soundFile]
