@@ -86,9 +86,10 @@ employee_id - ключ сотрудника
 
 id integer primary key - идентификатор, для ссылок
 title string unique - название
+ord integer unique - порядок сортировки
 
-Словарь выражений, таблица phrases
-----------------------------------
+Словарь выражений, таблица phrase
+---------------------------------
 
 id integer primary key - идентификатор, для ссылок
 category_id integer - ключ категории
