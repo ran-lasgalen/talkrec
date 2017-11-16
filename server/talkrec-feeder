@@ -117,7 +117,7 @@ proc runQueue {} {
     set now [clock seconds]
     foreach arcFile [glob -nocomplain -directory $::soundArchive *] {
 	catchDbg {
-	    if {$now - [file mtime $arcFile] > 172800} {
+	    if {$now - [file mtime $arcFile] > 14*86400} {
 		run file delete -- $arcFile
 	    }
 	}
