@@ -1,0 +1,68 @@
+#!/usr/bin/tclsh
+
+set libtcldir [file join [file dirname [file dirname [file normalize [info script]]]] recorder libtcl]
+source [file join $libtcldir common.tcl]
+package require tdbc
+package require tdbc::postgres
+
+proc main {} {
+    getOptions [configDictFile dispatcher] {}
+    asyncLoop analyze 60000 analyze
+    vwait forever
+}
+
+proc analyze {} {
+    safelog {info "analyze heartbeat"}
+    set ::config [dict merge {database talkrec} $::paths [readDict $::opt(-config)]]
+    set db [::tdbc::postgres::connection create db -database [dict get $::config database]]
+    try {
+	$db foreach talk {select id, talk from talk where not analyzed} {
+	    set talkId [dict get $talk id]
+	    set talkText [dict get $talk talk]
+	    try {
+		$db transaction {
+		    # этих записей не должно быть, но на всякий случай...
+		    $db allrows -as lists {delete from phrase_talk where talk_id = :talkId}
+		    $db foreach phrase {select id, regexp from phrase where analyzed} {
+			set phraseId [dict get $phrase id]
+			set re [dict get $phrase regexp]
+			# потенциально возможно битое регулярное выражение, тут мы это игнорируем
+			if {![catch {regexp -all $re $talkText} n]} {
+			    if {$n > 0} {$db allrows -as lists {insert into phrase_talk (phrase_id, talk_id, n) values (:phraseId, :talkId, :n)}}
+			}
+		    }
+		    $db allrows {update talk set analyzed = 't' where id = :talkId}
+		}
+		safelog {info "Analyzed talk $talkId"}
+	    } on error {err dbg} {
+		debugStackTrace $dbg
+		safelog {error "analyze talk $talkId: $err"}
+	    }
+	}
+	$db foreach phrase {select id, regexp from phrase where not analyzed} {
+	    set phraseId [dict get $phrase id]
+	    set re [dict get $phrase regexp]
+	    try {
+		# проверяем на битое регулярное выражение
+		regexp $re ""
+		$db transaction {
+		    # этих записей не должно быть, но на всякий случай...
+		    $db allrows -as lists {delete from phrase_talk where phrase_id = :phraseId}
+		    $db foreach talk {select id, talk from talk where analyzed} {
+			set talkId [dict get $talk id]
+			set talkText [dict get $talk talk]
+			set n [regexp -all $re $talkText]
+			if {$n > 0} {$db allrows -as lists {insert into phrase_talk (phrase_id, talk_id, n) values (:phraseId, :talkId, :n)}}
+		    }
+		    $db allrows {update phrase set analyzed = 't' where id = :phraseId}
+		}
+		safelog {info "Analyzed phrase $phraseId"}
+	    } on error {err dbg} {
+		debugStackTrace $dbg
+		safelog {error "analyze phrase $phraseId: $err"}
+	    }
+	}
+    } finally {$db close}
+}
+
+runMain

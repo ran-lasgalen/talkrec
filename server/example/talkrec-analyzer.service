@@ -1,0 +1,12 @@
+[Unit]
+Description=analyzer of recognized texts and phrases
+AssertPathExists=$serverBin/talkrec-analyzer
+
+[Service]
+WorkingDirectory=~
+ExecStart=$serverBin/talkrec-analyzer
+RestartSec=12
+Restart=always
+
+[Install]
+WantedBy=default.target
