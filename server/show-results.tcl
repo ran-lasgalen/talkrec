@@ -284,6 +284,85 @@ proc talkDateSeries {db where substs {date ""} {n 3}} {
 		    [lmap d $datesAfter {lappend d 1}]]
 }
 
+proc phraseExplained {date siteId phraseId} {
+    set db [::tdbc::postgres::connection create db -database talkrec]
+    try {
+	set siteName [lindex [$db allrows -as lists {select name from site where id = :siteId}] 0 0]
+	if {$siteName eq ""} {set siteName "№$siteId"}
+	set phrase [lindex [$db allrows {select description, regexp from phrase where id = :phraseId}] 0]
+	set title "В записях салона $siteName за [dateRu $date]"
+	if {$phrase eq ""} {
+	    set content "<p class='red'>Выражение №$phraseId не обнаружено в базе данных.</p>"
+	} else {
+	    set content "<p>Выражение: [htmlEscape [dict get $phrase description]]</p>"
+	    set re [dict get $phrase regexp]
+	    if {[catch {regexp $re ""} err dbg]} {
+		debugStackTrace $dbg
+		safelog {error "Ошибка регулярного выражения фразы №$phraseId ($re): $err"}
+		append content "<p class='red'>Некорректное регулярное выражение [htmlEscape $re]</p>"
+	    } else {
+		$db foreach row {select talk.id, talk, started_at, name from talk join phrase_talk on phrase_talk.talk_id = talk.id left outer join employee on employee_id = employee.id where site_id = :siteId and made_on = :date and phrase_id = :phraseId} {
+		    set name [dictGetOr "" $row name]
+		    if {$name ne ""} {set name ", $name"}
+		    set startedAt ""
+		    catch {
+			set startedAt [dict get $row started_at]
+			catch {set startedAt [clock format [clock scan $startedAt -format "%Y-%m-%d %H:%M:%S%z"] -format "%H:%M:%S"]}
+		    }
+		    append content "\n<div><em>$startedAt$name:</em><br />\n"
+		    if {[catch {regsub -all $re [htmlEscape [dict get $row talk]] {<b>&</b>}} res dbg]} {
+			debugStackTrace $dbg
+			safelog {error "Ошибка регулярной замены фразы №phraseId в записи №[dictGetOr {} $row id]"}
+			append content [htmlEscape [dictGetOr "" $row talk]]
+		    } else {
+			append content $res
+		    }
+		    append content "\n</div>"
+		}
+	    }
+	}
+    } finally {$db close}
+    set css {
+	<style>
+	.red { color: red }
+	.green { color: green }
+	.orange { color: orange }
+	.left { text-align: left }
+	.right { text-align: right }
+	.center { text-align: center }
+	</style>
+    }
+    return "<html><head><title>$title</title>$css</head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
+}
+
+proc summaryExplained {date siteId catId desired} {
+    set db [::tdbc::postgres::connection create db -database talkrec]
+    try {
+	set siteName [lindex [$db allrows -as lists {select name from site where id = :siteId}] 0 0]
+	if {$siteName eq ""} {set siteName "№$siteId"}
+	set category [lindex [$db allrows -as lists {select title from phrase_category where id = :catId}] 0 0]
+	if {$category eq ""} {set category "№$catId"}
+	if {$desired eq "t"} {set desiredRu "Желательные"} else {set desiredRu "Нежелательные"}
+	set title "$desiredRu выражения категории $category в записях салона $siteName за [dateRu $date]"
+	set content "<table border='1'><tbody>\n<tr><th>выражение</th><th>кол-во</th></tr>\n"
+	$db foreach row {select p.id, p.description, sum(pt.n) as catches from phrase p join phrase_talk pt on p.id = pt.phrase_id join talk t on t.id = pt.talk_id where t.site_id = :siteId and t.made_on = :date and p.category_id = :catId and p.desired = :desired group by p.id, p.description order by p.description} {
+	    append content "<tr><td><a href='/explain/$date/$siteId/[dict get $row id]'>[dict get $row description]</a></td><td class='right'>[dictGetOr 0 $row catches]</td></tr>\n"
+	}
+	append content "</tbody></table>"
+    } finally {$db close}
+    set css {
+	<style>
+	.red { color: red }
+	.green { color: green }
+	.orange { color: orange }
+	.left { text-align: left }
+	.right { text-align: right }
+	.center { text-align: center }
+	</style>
+    }
+    return "<html><head><title>$title</title>$css</head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
+}
+
 proc summary {date} {
     set db [::tdbc::postgres::connection create db -database talkrec]
     try {
@@ -323,8 +402,12 @@ proc summary {date} {
 		set siteId [dict get $site id]
 		foreach catId $catIds {
 		    set nt [dictGetOr 0 $matrix $siteId $catId t]
+		    set nts "<span class='green'>$nt</span>"
+		    if {$nt > 0} {set nts "<a href='/summary/$date/$siteId/$catId/t'>$nts</a>"}
 		    set nf [dictGetOr 0 $matrix $siteId $catId f]
-		    append content "<td class='center'><span class='green'>" $nt "</span> / <span class='red'>" $nf "</td>"
+		    set nfs "<span class='red'>$nf</span>"
+		    if {$nf > 0} {set nfs "<a href='/summary/$date/$siteId/$catId/f'>$nfs</a>"}
+		    append content "<td class='center'>$nts / $nfs</td>"
 		}
 		append content "</tr>\n"
 	    }
@@ -496,8 +579,14 @@ proc serveRequest {chan addr port} {
 	{ /summary/(\d\d\d\d-\d\d-\d\d) } {
 	    puts $chan [withHTTP [summary [lindex $matches 1]]]
 	}
+	{ /summary/(\d\d\d\d-\d\d-\d\d)/(\d+)/(\d+)/([tf]) } {
+	    puts $chan [withHTTP [summaryExplained [lindex $matches 1] [lindex $matches 2] [lindex $matches 3] [lindex $matches 4]]]
+	}
+	{ /explain/(\d\d\d\d-\d\d-\d\d)/(\d+)/(\d+) } {
+	    puts $chan [withHTTP [phraseExplained  [lindex $matches 1] [lindex $matches 2] [lindex $matches 3]]]
+	}
 	{ / } {
-	    puts $chan [withHTTP [selectSite]]
+	    puts $chan [withHTTP [summary ""]]
 	}
 	default {
 	    puts $chan [withHTTP ""]
