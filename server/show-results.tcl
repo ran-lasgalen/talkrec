@@ -252,31 +252,116 @@ proc selectEmployee {siteId} {
     return "<html><head><title>$title</title></head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
 }
 
+proc whereClause {keyword args} {
+    set conds [lmap c $args {if {$c eq ""} continue else {string cat ( $c )}}]
+    if {[llength $conds]} {
+	if {$keyword ne ""} {set keyword [string cat $keyword " "]}
+	string cat $keyword [join $conds " and "] " "
+    } else {return ""}
+}
+
+# Возвращает пару (дата, список пар дата-целое), где целое меньше нуля, если
+# дата раньше запрошенной, равно нулю, если равна, и больше нуля, если дата
+# больше запрошенной. Если дата не задана, ищется (и возвращается) самая
+# свежая. Если не найдена, возвращает пустую дату и пустой список. Если дата
+# задана, НЕ проверяется, есть ли соответствие в базе.
+# db - соединение с базой данных
+# where - содержимое WHERE
+# subst - словарь подстановок для $where
+# date - искомая дата (если пусто, ищется самая свежая)
+# n - максимальное количество дат до и после
+proc talkDateSeries {db where substs {date ""} {n 3}} {
+    if {$date eq ""} {
+	set date [lindex [$db allrows -as lists "select max(made_on) from talk [whereClause where $where]" $substs] 0 0]
+    }
+    if {$date eq ""} {return {"" {}}}
+    dict set substs date $date
+    set datesBefore [$db allrows -as lists [string cat "select distinct made_on from talk " [whereClause where $where "made_on < :date"] " order by made_on desc limit :n"] $substs]
+    set datesAfter [$db allrows -as lists [string cat "select distinct made_on from talk " [whereClause where $where "made_on > :date"] " order by made_on limit :n"] $substs]
+    list $date [concat \
+		    [lmap d [lreverse $datesBefore] {lappend d -1}] \
+		    [list [list $date 0]] \
+		    [lmap d $datesAfter {lappend d 1}]]
+}
+
+proc summary {date} {
+    set db [::tdbc::postgres::connection create db -database talkrec]
+    try {
+	foreach {date dateSeries} [talkDateSeries $db "" {} $date] break
+	set prevnext [lmap el $dateSeries {
+	    foreach {d i} $el break
+	    set dr [dateRuAbbr $d]
+	    if {$i} {list "/summary/$d" $dr} else {list "" $dr}
+	}]
+	set content ""
+	if {[llength $prevnext]} {
+	    append content [genLinks $prevnext]\n
+	}
+	if {$date eq ""} {
+	    set title "Сводные данные"
+	    append content "<p>Сводные данные отсутствуют</p>"
+	} else {
+	    set title "Сводные данные за [dateRu $date]"
+	    set sites [$db allrows {select id,name from site where id in (select distinct site_id from talk) order by name}]
+	    set categories [phraseCategories $db]
+	    set catIds [lmap cat $categories {dict get $cat id}]
+	    set matrix [dict create]
+	    foreach stat [phraseStats $db $date] {
+		set siteId [dict get $stat site_id]
+		set catId [dict get $stat category_id]
+		set desired [dict get $stat desired]
+		set catches [dict get $stat catches]
+		if {![dict exists $matrix $siteId]} {dict set matrix $siteId [dict create]}
+		if {![dict exists $matrix $siteId $catId]} {dict set matrix $siteId $catId [dict create]}
+		dict set matrix $siteId $catId $desired $catches
+	    }
+	    append content "<table border='1'><tbody>\n<tr><th>Салон</th>"
+	    foreach cat $categories {append content "<th>[dictGetOr {&nbsp;} $cat title]</th>"}
+	    append content "</tr>\n"
+	    foreach site $sites {
+		append content "<tr><th class='left'>[dictGetOr {&nbsp;} $site name]</th>"
+		set siteId [dict get $site id]
+		foreach catId $catIds {
+		    set nt [dictGetOr 0 $matrix $siteId $catId t]
+		    set nf [dictGetOr 0 $matrix $siteId $catId f]
+		    append content "<td class='center'><span class='green'>" $nt "</span> / <span class='red'>" $nf "</td>"
+		}
+		append content "</tr>\n"
+	    }
+	    append content "</tbody></table>"
+	}
+    } finally {$db close}
+    set css {
+	<style>
+	.red { color: red }
+	.green { color: green }
+	.orange { color: orange }
+	.left { text-align: left }
+	.right { text-align: right }
+	.center { text-align: center }
+	</style>
+    }
+    return "<html><head><title>$title</title>$css</head><body>\n[links]\n<h1>$title</h1>\n$content\n</body></html>"
+}
+
+proc phraseCategories {db} {$db allrows {select id, title from phrase_category order by ord}}
+
+proc phraseStats {db date} {
+    set query {select t.site_id, p.category_id, p.desired, sum(pt.n) as catches from talk t join phrase_talk pt on t.id = pt.talk_id join phrase p on p.id = pt.phrase_id where t.made_on = :date group by t.site_id, p.category_id, p.desired}
+    db allrows $query
+}
+
 proc employeeTalks {siteId employeeId {date ""}} {
     set db [::tdbc::postgres::connection create db -database talkrec]
     try {
 	set siteName [lindex [$db allrows -as lists {select name from site where id = :siteId}] 0 0]
 	set speakerName [lindex [$db allrows -as lists {select name from employee where id = :employeeId}] 0 0]
-	if {$date eq ""} {
-	    set date [lindex [$db allrows -as lists {select max(made_on) from talk where site_id = :siteId and employee_id = :employeeId}] 0 0]
-	}
-	if {$date eq ""} {
-	    set prevnext {}
-	} else {
-	    set prevnext [concat \
-			      [lreverse [$db allrows -as lists {select distinct made_on from talk where site_id = :siteId and employee_id = :employeeId and made_on < :date order by made_on desc limit 3}]] \
-			      [list [list $date]] \
-			      [$db allrows -as lists {select distinct made_on from talk where site_id = :siteId and employee_id = :employeeId and made_on > :date order by made_on limit 3}]]
-	    # каждый элемент prevnext - одноэлементный список, состоящий из даты
-	    set prevnext [lmap el $prevnext {
-		set d [lindex $el 0]
-		if {$d eq $date} {
-		    list "" [dateRuAbbr $d]
-		} else {
-		    list "/empl/$siteId/$employeeId/$d" [dateRuAbbr $d]
-		}
-	    }]
-	}
+	foreach {date dateSeries} [talkDateSeries $db {site_id = :siteId and employee_id = :employeeId} [dict create siteId $siteId employeeId $employeeId] $date] break
+	set prevnext [lmap el $dateSeries {
+	    foreach {d i} $el break
+	    set dr [dateRuAbbr $d]
+	    if {$i} {list "/empl/$siteId/$employeeId/$d" $dr} else {list "" $dr}
+	}]
 	set content [sitesWithRecordLinks $db]\n
 	set speakers [speakersFromSite $db $siteId]
 	append content [genLinks [lmap speaker $speakers {
@@ -365,6 +450,7 @@ proc genLinks {linkPairs} {
 
 proc links {} {
     genLinks {
+	{/summary {сводные данные}}
 	{/empl {записи сотрудников}}
 	{/all {результаты распознавания}}
 	{/report {в работе}}
@@ -403,6 +489,12 @@ proc serveRequest {chan addr port} {
 	}
 	{ /empl/(\d+)/(\d+)/(\d\d\d\d-\d\d-\d\d) } {
 	    puts $chan [withHTTP [employeeTalks [lindex $matches 1] [lindex $matches 2] [lindex $matches 3]]]
+	}
+	{ /summary } {
+	    puts $chan [withHTTP [summary ""]]
+	}
+	{ /summary/(\d\d\d\d-\d\d-\d\d) } {
+	    puts $chan [withHTTP [summary [lindex $matches 1]]]
 	}
 	{ / } {
 	    puts $chan [withHTTP [selectSite]]
