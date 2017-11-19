@@ -276,6 +276,7 @@ proc talkDateSeries {db where substs {date ""} {n 3}} {
     }
     if {$date eq ""} {return {"" {}}}
     dict set substs date $date
+    dict set substs n $n
     set datesBefore [$db allrows -as lists [string cat "select distinct made_on from talk " [whereClause where $where "made_on < :date"] " order by made_on desc limit :n"] $substs]
     set datesAfter [$db allrows -as lists [string cat "select distinct made_on from talk " [whereClause where $where "made_on > :date"] " order by made_on limit :n"] $substs]
     list $date [concat \
