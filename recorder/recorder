@@ -14,7 +14,7 @@ proc acceptConn {sock addr port} {
 proc tellState {chan replyId {format old}} {
     if {$format eq "yaml"} {set format json}
     # mode вставляется после ::intent, потому что нам нужно mode из ::mode
-    set dct [dict merge [array get ::recordState] [array get ::intent] [list mode $::mode now [clock seconds]] [dict filter $::config key headset]]
+    set dct [dict merge [array get ::recordState] [array get ::intent] [list mode $::mode now [clock seconds] version $::version] [dict filter $::config key headset]]
     switch $format {
 	json {
 	    ::json::write indented 0
