@@ -285,13 +285,13 @@ proc talkDateSeries {db where substs {date ""} {n 3}} {
 		    [lmap d $datesAfter {lappend d 1}]]
 }
 
-proc phraseExplained {date siteId phraseId desired} {
+proc phraseExplained {date siteId phraseId} {
     set db [::tdbc::postgres::connection create db -database talkrec]
     try {
-	if {$desired eq "t"} {set class green} else {set class red}
 	set siteName [lindex [$db allrows -as lists {select name from site where id = :siteId}] 0 0]
 	if {$siteName eq ""} {set siteName "№$siteId"}
-	set phrase [lindex [$db allrows {select description, regexp from phrase where id = :phraseId}] 0]
+	set phrase [lindex [$db allrows {select description, regexp, desired from phrase where id = :phraseId}] 0]
+	if {[dictGetOr t $phrase desired] eq "t"} {set class green} else {set class red}
 	set title "В записях салона $siteName за [dateRu $date]"
 	if {$phrase eq ""} {
 	    set content "<p class='red'>Выражение №$phraseId не обнаружено в базе данных.</p>"
@@ -348,7 +348,7 @@ proc summaryExplained {date siteId catId desired} {
 	set title "$desiredRu выражения категории $category в записях салона $siteName за [dateRu $date]"
 	set content "<table border='1'><tbody>\n<tr><th>выражение</th><th>кол-во</th></tr>\n"
 	$db foreach row {select p.id, p.description, sum(pt.n) as catches from phrase p join phrase_talk pt on p.id = pt.phrase_id join talk t on t.id = pt.talk_id where t.site_id = :siteId and t.made_on = :date and p.category_id = :catId and p.desired = :desired group by p.id, p.description order by p.description} {
-	    append content "<tr><td><a href='/explain/$date/$siteId/[dict get $row id]/$desired'>[dict get $row description]</a></td><td class='right'>[dictGetOr 0 $row catches]</td></tr>\n"
+	    append content "<tr><td><a href='/explain/$date/$siteId/[dict get $row id]'>[dict get $row description]</a></td><td class='right'>[dictGetOr 0 $row catches]</td></tr>\n"
 	}
 	append content "</tbody></table>"
     } finally {$db close}
@@ -584,8 +584,8 @@ proc serveRequest {chan addr port} {
 	{ /summary/(\d\d\d\d-\d\d-\d\d)/(\d+)/(\d+)/([tf]) } {
 	    puts $chan [withHTTP [summaryExplained [lindex $matches 1] [lindex $matches 2] [lindex $matches 3] [lindex $matches 4]]]
 	}
-	{ /explain/(\d\d\d\d-\d\d-\d\d)/(\d+)/(\d+)/([tf]) } {
-	    puts $chan [withHTTP [phraseExplained  [lindex $matches 1] [lindex $matches 2] [lindex $matches 3] [lindex $matches 4]]]
+	{ /explain/(\d\d\d\d-\d\d-\d\d)/(\d+)/(\d+) } {
+	    puts $chan [withHTTP [phraseExplained  [lindex $matches 1] [lindex $matches 2] [lindex $matches 3]]]
 	}
 	{ / } {
 	    puts $chan [withHTTP [summary ""]]
