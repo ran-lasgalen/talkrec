@@ -575,3 +575,16 @@ proc dictAsSet {dict} {
     foreach k [lsort [dict keys $dict]] {lappend res $k [dict get $dict $k]}
     return $res
 }
+
+proc monthRuGen {clock} {
+    if {[string length $clock] == 2} {
+	set month $clock
+    } else {
+	set month [clock format $clock -format %m]
+    }
+    dictGetOr "" {01 января 02 февраля 03 марта 04 апреля 05 мая 06 июня 07 июля 08 августа 09 сентября 10 октября 11 ноября 12 декабря} $month
+}
+
+proc dateRu {clock} {
+    string trim [string cat [clock format $clock -format "%e "] [monthRuGen $clock] [clock format $clock -format " %Y"]]
+}
