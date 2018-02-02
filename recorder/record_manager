@@ -21,7 +21,10 @@ proc main {} {
     }
     array set ::availableHeadsets {}
     array set ::headsetsInUse {}
-    set ::defaultBoldFont [boldVersionOfFont TkDefaultFont]
+    set ::defaultFont [fontInSize TkDefaultFont 12]
+    option add *font $::defaultFont
+    set ::defaultBoldFont [boldVersionOfFont $::defaultFont]
+    set ::timeFont [fontInFactor $::defaultFont 1.2]
     createMainFrame
     refillEmployeeControls
     set ::recorders [lmap r [dict get $::config recorders] {splitAddr $r 17119}]
@@ -31,6 +34,7 @@ proc main {} {
 	safelog {info "Сервер конфигурации: $::serverAddr"}
 	asyncConnect $::serverAddr 17120 2000 {} onConnectToConfigurator onDisconnectFromConfigurator
     }
+    asyncLoop updateCurrentDateTime 1000 updateCurrentDateTime
 }
 
 proc startConnectionToRecorder {recorder} {
@@ -271,6 +275,34 @@ proc boldVersionOfFont {font} {
     }
 }
 
+proc fontInFactor {font factor} {
+    array set font_attrs [font actual $font]
+    set font_attrs(-size) [expr "int(" $font_attrs(-size) * $factor ")"]
+    if {[catch {font create {*}[array get font_attrs]} res]} {
+	puts stderr "fontInFactor: $res"
+	return $font
+    } else {
+	return $res
+    }
+}
+
+proc fontInSize {font size} {
+    array set font_attrs [font actual $font]
+    set font_attrs(-size) $size
+    if {[catch {font create {*}[array get font_attrs]} res]} {
+	puts stderr "fontInSize: $res"
+	return $font
+    } else {
+	return $res
+    }
+}
+
+proc updateCurrentDateTime {} {
+    set now [clock seconds]
+    $::currentTimeLabel configure -text [clock format $now -format %H:%M]
+    $::currentDateLabel configure -text [dateRu $now]
+}
+
 proc createMainFrame {} {
     option add *background white
     set ::mainWindow .
@@ -280,6 +312,19 @@ proc createMainFrame {} {
     grid anchor $::mainWindow center
     set logo [image create photo logo -file [file join $::scriptdir logo.png]]
     grid [label .logo -image $logo -background red] -sticky we
+    grid [frame .space1] -ipady 10 -sticky we
+    set infoFrame [frame .infoFrame]
+    grid $infoFrame -sticky we
+    set ::shopLabel [label $infoFrame.shop -text Магазин-салон -padx 40]
+    grid $::shopLabel -row 1 -column 0 -sticky w
+    grid [frame $infoFrame.space] -row 1 -column 1 -sticky we
+    grid columnconfigure $infoFrame 1 -weight 1
+    set ::currentTimeLabel [label $infoFrame.currentTime -foreground red -padx 40 -font $::timeFont]
+    grid $::currentTimeLabel -row 0 -column 2 -sticky e
+    set ::currentDateLabel [label $infoFrame.currentDate -foreground red -padx 40]
+    grid $::currentDateLabel -row 1 -column 2 -sticky e
+    updateCurrentDateTime
+    grid [frame .space2] -ipady 10 -sticky we
     set mainFrame [ScrolledWindow .mainFrame]
     grid $mainFrame -sticky nswe
     array set i [grid info $mainFrame]
