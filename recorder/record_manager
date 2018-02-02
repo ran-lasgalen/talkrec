@@ -2,6 +2,7 @@
 
 set libtcldir [file join [file dirname [file normalize [info script]]] libtcl]
 source [file join $libtcldir common.tcl]
+set scriptdir [file dirname [file normalize [info script]]]
 package require yaml
 package require BWidget
 
@@ -271,11 +272,14 @@ proc boldVersionOfFont {font} {
 }
 
 proc createMainFrame {} {
+    option add *background white
     set ::mainWindow .
     wm title $::mainWindow "Управление записью"
     wm iconname $::mainWindow "Управление записью"
     #wm attributes $::mainWindow -fullscreen 1
     grid anchor $::mainWindow center
+    set logo [image create photo logo -file [file join $::scriptdir logo.png]]
+    grid [label .logo -image $logo -background red] -sticky we
     set mainFrame [ScrolledWindow .mainFrame]
     grid $mainFrame -sticky nswe
     array set i [grid info $mainFrame]
@@ -287,14 +291,14 @@ proc createMainFrame {} {
     createEmployeesTable $::employeeFrame
     set lastErrorsFrame [createTextFrame .errors -width 80 -height 3 -foreground red]
     grid [button $lastErrorsFrame.hide -text "Скрыть" -command [list grid forget $lastErrorsFrame]] -column 2 -row 0 -rowspan 2 -sticky ns
-    grid $lastErrorsFrame
-    grid [button .endDay -command leaveAllHeadsets -text {Завершить рабочий день}]
+    grid $lastErrorsFrame -sticky we
+    grid [button .endDay -command leaveAllHeadsets -text {Завершить рабочий день}] -sticky we
     set ::showLogger 0
-    grid [checkbutton .showLogger -text {Показывать окно технического отчета} -command showOrHideLogger]
+    grid [checkbutton .showLogger -text {Показывать окно технического отчета} -command showOrHideLogger] -sticky we
     set loggerFrame [createTextFrame .logger -width 80 -height 12 -wrap none]
     set ::showDebuggingOutput $::opt(-debug)
     grid [checkbutton $loggerFrame.showDebuggingOutput -text {Показывать отладочный вывод} -command showOrHideDebug] -column 0 -row 2 -sticky w
-    grid $loggerFrame
+    grid $loggerFrame -sticky we
     set ::lastErrorsFrame [concat [list $lastErrorsFrame] [grid info $lastErrorsFrame]]
     grid forget $lastErrorsFrame
     set ::loggerFrame [concat [list $loggerFrame] [grid info $loggerFrame]]
@@ -550,7 +554,7 @@ proc leaveAllHeadsets {} {
 proc createEmployeesTable {container} {
     grid anchor $container center
     set ::employeeControls [dict create]
-    set hName [label $container.hName -font $::defaultBoldFont -text Имя]
+    set hName [label $container.hName -font $::defaultBoldFont -text Сотрудник]
     set hHeadset [label $container.hHeadset -font $::defaultBoldFont -text Гарнитура]
     set hRecord [label $container.hRecord -font $::defaultBoldFont -text Запись]
     grid configure $hName $hHeadset $hRecord
