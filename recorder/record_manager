@@ -315,7 +315,7 @@ proc createMainFrame {} {
     grid [frame .space1] -ipady 10 -sticky we
     set infoFrame [frame .infoFrame]
     grid $infoFrame -sticky we
-    set ::shopLabel [label $infoFrame.shop -text Магазин-салон -padx 40]
+    set ::shopLabel [label $infoFrame.shop -text [dictGetOr "" $::config siteName] -padx 40]
     grid $::shopLabel -row 1 -column 0 -sticky w
     grid [frame $infoFrame.space] -row 1 -column 1 -sticky we
     grid columnconfigure $infoFrame 1 -weight 1
