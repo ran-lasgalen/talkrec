@@ -21,7 +21,7 @@ proc main {} {
     }
     array set ::availableHeadsets {}
     array set ::headsetsInUse {}
-    set ::defaultFont [fontInSize TkDefaultFont 16]
+    set ::defaultFont [fontInSize TkDefaultFont 14]
     option add *font $::defaultFont
     set ::defaultBoldFont [boldVersionOfFont $::defaultFont]
     set ::timeFont [fontInFactor $::defaultFont 2]
