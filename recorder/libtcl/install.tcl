@@ -227,8 +227,17 @@ proc genEmployeesConfig {db siteId indented} {
 proc genRecordManagerConfig {db siteId serverAddr indented} {
     ::json::write indented $indented
     set recorders [$db allrows -as lists {select ip from record_station where site_id = :siteId}]
+    set siteInfo [lindex [$db allrows {select name, kind from site where id = :siteId}] 0]
+    if {[dict exists $siteInfo name]} {
+	set siteName [dict get $siteInfo name]
+	set kind [dictGetOr "" $siteInfo kind]
+	if {$kind eq "магазин"} {set kind "Магазин-салон"}
+	if {$kind ne ""} {set siteName [string cat $kind " " $siteName]}
+    } else {
+	set siteName ""
+    }
     set recordersJSON [::json::write array {*}[lmap el $recorders {::json::write string $el}]]
-    ::json::write object server [::json::write string $serverAddr] siteId [scalarToJSON $siteId] recorders $recordersJSON
+    ::json::write object server [::json::write string $serverAddr] siteId [scalarToJSON $siteId] siteName [::json::write string $siteName] recorders $recordersJSON
 }
 
 proc genRecorderConfig {ipConf serverAddr indented} {
