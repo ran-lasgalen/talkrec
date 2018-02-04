@@ -21,10 +21,12 @@ proc main {} {
     }
     array set ::availableHeadsets {}
     array set ::headsetsInUse {}
-    set ::defaultFont [fontInSize TkDefaultFont 12]
+    set ::defaultFont [fontInSize TkDefaultFont 16]
     option add *font $::defaultFont
     set ::defaultBoldFont [boldVersionOfFont $::defaultFont]
-    set ::timeFont [fontInFactor $::defaultFont 1.2]
+    set ::timeFont [fontInFactor $::defaultFont 2]
+    set ::dateFont [fontInFactor $::defaultFont 1.5]
+    set ::shopFont [fontInFactor $::defaultFont 1.5]
     createMainFrame
     refillEmployeeControls
     set ::recorders [lmap r [dict get $::config recorders] {splitAddr $r 17119}]
@@ -315,18 +317,24 @@ proc createMainFrame {} {
     grid [frame .space1] -ipady 10 -sticky we
     set infoFrame [frame .infoFrame]
     grid $infoFrame -sticky we
-    set ::shopLabel [label $infoFrame.shop -text [dictGetOr "" $::config siteName] -padx 40]
+    set ::shopLabel [label $infoFrame.shop -text [dictGetOr "" $::config siteName] -padx 40 -font $::shopFont]
     grid $::shopLabel -row 1 -column 0 -sticky w
     grid [frame $infoFrame.space] -row 1 -column 1 -sticky we
     grid columnconfigure $infoFrame 1 -weight 1
     set ::currentTimeLabel [label $infoFrame.currentTime -foreground red -padx 40 -font $::timeFont]
     grid $::currentTimeLabel -row 0 -column 2 -sticky e
-    set ::currentDateLabel [label $infoFrame.currentDate -foreground red -padx 40]
+    set ::currentDateLabel [label $infoFrame.currentDate -foreground red -padx 40 -font $::dateFont]
     grid $::currentDateLabel -row 1 -column 2 -sticky e
     updateCurrentDateTime
     grid [frame .space2] -ipady 10 -sticky we
-    set mainFrame [ScrolledWindow .mainFrame]
-    grid $mainFrame -sticky nswe
+    set mainFrameContainer [frame .mainFrameContainer]
+    grid $mainFrameContainer -sticky nswe
+    array set i [grid info $mainFrameContainer]
+    grid columnconfigure $i(-in) $i(-column) -weight 1
+    grid rowconfigure $i(-in) $i(-row) -weight 1
+    set mainFrame [ScrolledWindow $mainFrameContainer.mainFrame]
+    grid [frame $mainFrameContainer.space1] -ipadx 20 -sticky ns
+    grid $mainFrame -row 0 -column 1 -sticky nswe
     array set i [grid info $mainFrame]
     grid columnconfigure $i(-in) $i(-column) -weight 1
     grid rowconfigure $i(-in) $i(-row) -weight 1
