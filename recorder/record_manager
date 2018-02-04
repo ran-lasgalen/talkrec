@@ -21,6 +21,7 @@ proc main {} {
     }
     array set ::availableHeadsets {}
     array set ::headsetsInUse {}
+    set ::defaultbg white;	# default is gray85
     set ::defaultFont [fontInSize TkDefaultFont 14]
     option add *font $::defaultFont
     set ::defaultBoldFont [boldVersionOfFont $::defaultFont]
@@ -306,7 +307,7 @@ proc updateCurrentDateTime {} {
 }
 
 proc createMainFrame {} {
-    option add *background white
+    option add *background $::defaultbg
     set ::mainWindow .
     wm title $::mainWindow "Управление записью"
     wm iconname $::mainWindow "Управление записью"
@@ -528,17 +529,18 @@ proc updateWidgetsForEmployee {employeeId headset} {
 	switch $state {
 	    noHeadset {
 		$stateLabel configure -text "Гарнитура не взята"
-		$recordButton configure -background gray85 -state disabled -text "" -command {}
-		$forbidButton configure -background gray85 -state disabled -text "" -command {}
+		# default background is gray85
+		$recordButton configure -background $::defaultbg -state disabled -text "" -command {}
+		$forbidButton configure -background $::defaultbg -state disabled -text "" -command {}
 	    }
 	    headsetAbsent {
 		$stateLabel configure -text "Гарнитура не подключена"
-		$recordButton configure -background gray85 -state disabled -text "" -command {}
-		$forbidButton configure -background gray85 -state disabled -text "" -command {}
+		$recordButton configure -background $::defaultbg -state disabled -text "" -command {}
+		$forbidButton configure -background $::defaultbg -state disabled -text "" -command {}
 	    }
 	    restart {
 		$stateLabel configure -text "Подготовка"
-		$recordButton configure -background gray85 -state disabled -text "Ждем..." - command {}
+		$recordButton configure -background $::defaultbg -state disabled -text "Ждем..." - command {}
 	    }
 	    ready {
 		$stateLabel configure -text "Готовность"
@@ -558,7 +560,7 @@ proc updateWidgetsForEmployee {employeeId headset} {
 	    }
 	    stopping {
 		$stateLabel configure -text "Остановка..."
-		$recordButton configure -background gray85 -state disabled -text "Ждем..." -command {}
+		$recordButton configure -background $::defaultbg -state disabled -text "Ждем..." -command {}
 	    }
 	    error {
 		$stateLabel configure -text "Ошибка"
