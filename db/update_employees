@@ -1,0 +1,74 @@
+#!/usr/bin/tclsh
+
+package require tdbc
+package require tdbc::postgres
+
+proc main {} {
+    if {[llength $::argv] != 1} {error "Usage: update_employees file"}
+    set db [::tdbc::postgres::connection create db -database talkrec]
+    try {
+	set empdict [parseEmployeesList $db [lindex $::argv 0]]
+	dict for {sid emps} $empdict {
+	    puts "site id: $sid"
+	    # foreach e $emps {puts $e}
+	    $db begintransaction
+	    $db allrows {delete from site_employee where site_id = :sid}
+	    foreach e $emps {
+	    	set eid [employeeId $db $e]
+	    	set recs [$db allrows {select * from site_employee where site_id = :sid and employee_id = :eid}]
+	    	if {[llength $recs]} {
+	    	    puts "already have record for site $sid and employee $e ($eid)"
+	    	}
+	    	# puts "inserting ($sid, $eid, $e)"
+	    	$db allrows {insert into site_employee (site_id, employee_id) values (:sid, :eid)}
+	    }
+	    puts [$db allrows -as lists {select name from employee join site_employee on id = employee_id where site_id = :sid}]
+	    $db commit
+	}
+    } finally {
+	$db close
+    }
+}
+
+proc employeeId {db name} {
+    set ids [$db allrows -as lists {select id from employee where name = :name}]
+    if {[llength $ids] > 1} {error "several ids for employee $name: $ids"}
+    if {[llength $ids] == 1} {
+	return [lindex $ids 0 0]
+    } else {
+	set ids [$db allrows -as lists {insert into employee (name) values (:name) returning id}]
+	if {[llength $ids] == 1} {return [lindex $ids 0 0]} else {error "insert $name return: $ids"}
+    }
+}
+
+proc parseEmployeesList {db filename} {
+    set res [dict create]
+    set sites [dict create]
+    set fh [open $filename r]
+    try {
+	while {[gets $fh line] >= 0} {
+	    if {[regexp {^\s*$} $line]} continue
+	    if {[regexp {^\s*(\w+)[^\t]*\t(.*)$} $line - site dirtyName]} {
+		set name [string trim [regsub -all {\s+} $dirtyName { }]]
+		if {![dict exists $sites $site]} {
+		    set sids [$db allrows -as lists {select id from site where name ~ :site}]
+		    if {[llength $sids] == 0} {error "site $site not found"}
+		    if {[llength $sids] > 1} {error "several ids for site $site: $sids"}
+		    dict set sites $site [lindex $sids 0 0]
+		}
+		set sid [dict get $sites $site]
+		set eids [$db allrows -as lists {select id from employee where name = :name}]
+		if {[llength $eids] > 1} {error "several ids for employee $name: $eids"}
+		if {[llength $eids] == 1} {set eid [lindex $eids 0 0]} else {set eid "new"}
+		dict lappend res $sid $name
+	    } else {
+		error "Bad line: $line"
+	    }
+	}
+	return $res
+    } finally {
+	close $fh
+    }
+}
+
+main
