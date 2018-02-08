@@ -1,0 +1,10 @@
+#!/usr/bin/tclsh
+
+set talkrecdir [file dirname [file dirname [file normalize [info script]]]]
+set recorderdir [file join $talkrecdir recorder]
+set libtcldir [file join $recorderdir libtcl]
+source [file join $libtcldir common.tcl]
+
+if {![catch {md5OfDir $recorderdir check} masterVersions]} {
+    puts $masterVersions
+}
