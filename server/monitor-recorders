@@ -15,7 +15,6 @@ proc main {} {
 	error "В [configDictFile install-recorder] не указан serverAddr"
     }
     array set ::hostState {}
-    array set ::hostVersion {}
     asyncLoop runHostChecks 60000 runHostChecks
     after 8000 {asyncLoop fixHostCheckResults 60000 fixHostCheckResults}
     socket -server acceptConfigRequest 17120
@@ -36,51 +35,65 @@ proc onConnectToRecorder {connData} {
     set chan [connDataChan $connData]
     fconfigure $chan -buffering line
     after 4000 [list asyncDisconnect $connData replyTimeout]
-    catchDbg {puts $chan [versionRequest]}
+    catchDbg {puts $chan [stateRequest]}
     fileevent $chan readable [list asyncOnReply $connData 4000 serveReplyFromRecorder]
 }
 
-proc recordError {connData message} {
+proc recordError {connData state {message {}}} {
     if {[catch {connDataHost $connData} host]} {
 	safelog {error "Нет ключа host в [list $connData]\n  +проблема: $message"}
     } else {
-	recordState $host $message
+	set st [dict create state $state]
+	if {$message ne ""} {dict set st errorMessage $message}
+	recordHostState $host $st
     }
 }
 
 proc fixHostCheckResults {} {
     safelog {info "fixHostCheckResults heartbeat"}
     set states [array get ::hostState]
-    set versions [array get ::hostVersion]
     array set ::hostState {}
-    array set ::hostVersion {}
-    if {[dict size $states] + [dict size $versions] == 0} return
+    if {[dict size $states] == 0} return
     ::tdbc::postgres::connection create dbf -database $::database
     try {
 	dict for {host state} $states {
-	    foreach {message seconds} $state break
-	    set timestamp [clock format $seconds -format "%Y-%m-%d %H:%M:%S%z"]
-	    dbf allrows {update record_station set state = :message, state_at = :timestamp where ip = :host and (state <> 'отключен' or state is null)} [dict create message $message timestamp $timestamp host $host]
-	}
-	dict for {host vd} $versions {
-	    dict set vd host $host
-	    dbf allrows {update record_station set version = :version, time_diff = :timeDiff where ip = :host} $vd
+	    dict set state host $host
+	    dict set state timestamp [clock format [dict get $state receivedAt] -format "%Y-%m-%d %H:%M:%S%z"]
+	    # state, host и timestamp есть всегда
+	    # если errorMessage, name, siteId и headset отсутствуют, то их надо выставить в NULL
+	    set updateQuery {update record_station
+		set state = :stateRu, state_at = :timestamp, error_message = :errorMessage,
+		reported_name = :name, reported_site_id = :siteId, reported_headset = :headset}
+	    # а version и timeDiff надо апдейтить только если они есть, а если нет, оставить прежние
+	    if {[dict exists $state version]} {append updateQuery {, version = :version}}
+	    if {[dict exists $state timeDiff]} {append updateQuery {, time_diff = :timeDiff}}
+	    # и не забыть where
+	    append updateQuery { where ip = :host and (state <> 'отключена' or state is null)}
+	    dbf allrows $updateQuery $state
 	}
     } finally {dbf close}
 }
 
-proc recordState {host message} {
-    set ::hostState($host) [list $message [clock seconds]]
-}
-
-proc recordVersion {host vdict} {
-    if {[catch {dict get $vdict version} version]} {set version ""}
-    if {$version eq ""} {set version "доисторическая"}
-    set vd [dict create version $version]
-    if {[dict exists $vdict now]} {
-	dict set vd timeDiff [expr {[dict get $vdict now] - [clock seconds]}]
+proc recordHostState {host stateDict} {
+    dict set stateDict receivedAt [clock seconds]
+    if {[catch {dict get $stateDict version} version]} {set version ""}
+    if {$version eq ""} {dict set stateDict version "доисторическая"}
+    if {[dict exists $stateDict now]} {
+	dict set stateDict timeDiff [expr {[dict get $stateDict now] - [clock seconds]}]
     }
-    set ::hostVersion($host) $vd
+    set state [dictGetOr empty $stateDict state]
+    switch $state {
+	silence -
+	stopping -
+	recording {dict set stateDict stateRu "запись"}
+	restart -
+	ready {dict set stateDict stateRu "простаивает"}
+	empty -
+	noDevice -
+	error {dict set stateDict stateRu "не работает"}
+	default {dict set stateDict stateRu $state}
+    }
+    set ::hostState($host) $stateDict
 }
 
 proc onDisconnectFromRecorder {connData reason message} {
@@ -92,7 +105,7 @@ proc onDisconnectFromRecorder {connData reason message} {
 	    if {$message eq "connection refused"} {
 		recordError $connData "не работает"
 	    } else {
-		recordError $connData $message
+		recordError $connData "не работает" $message
 	    }
 	}
 	ok {
@@ -100,11 +113,10 @@ proc onDisconnectFromRecorder {connData reason message} {
 		safelog {error "Нет ключа host в [list $connData]"}
 	    } else {
 		safelog {debug "$host [list $message]"}
-		recordVersion $host $message
-		recordState $host "работает"
+		recordHostState $host $message
 	    }
 	}
-	default {recordError $connData $message}
+	default {recordError $connData "не работает" $message}
     }
 }
 
@@ -114,10 +126,10 @@ proc serveReplyFromRecorder {connData line} {
 	debugStackTrace $dbg
 	return [list ok {}]
     }
-    return [list ok [dict filter $obj key version now]]
+    return [list ok $obj]
 }
 
-proc versionRequest {} {simpleDictToJSON [dict create msgId [nextMessageId] req version] 0}
+proc stateRequest {} {simpleDictToJSON [dict create msgId [nextMessageId] req state] 0}
 
 proc nextMessageId {} {incr ::nextMessageId}
 
