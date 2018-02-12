@@ -68,6 +68,8 @@ proc showRecordStations {} {
 	    foreach k {name ip headset version state state_at time_diff} {
 		if {$k in {state ip}} {
 		    switch $state {
+			запись -
+			простаивает -
 			работает { set class green }
 			отключена { set class orange }
 			default {
@@ -76,11 +78,22 @@ proc showRecordStations {} {
 		    }
 		} elseif {$k eq "version"} {
 		    if {$version in $myVersions} {set class green} {set class orange}
+		} elseif {$k eq "name"} {
+		    set reportedSiteId [dictGetOr "" $row reported_site_id]
+		    set siteId [dictGetOr "" $row site_id]
+		    if {$reportedSiteId ne "" && $reportedSiteId ne $siteId} {set class red} {set class ""}
+		} elseif {$k eq "headset"} {
+		    set reportedHeadset [dictGetOr "" $row reported_headset]
+		    set headset [dictGetOr "" $row headset]
+		    if {$reportedHeadset ne "" && $reportedHeadset != $headset} {set class red} {set class ""}
 		} else {set class ""}
 		if {$class eq ""} {set addclass ""} {set addclass " class=\"$class\""}
 		append content "<td$addclass>[dictGetOr {&nbsp;} $row $k]</td>"
 	    }
 	    append content "</tr>\n"
+	    if {[dict exists $row reported_name]} {
+		append content "<tr><td colspan=\"2\">&nbsp;</td><td colspan=\"5\">[dict get $row reported_name]</td></tr>\n"
+	    }
 	}
     } finally { catchDbg {db close} }
     set title [clock format [clock seconds] -format "Состояние станций записи на %H:%M:%S %d.%m.%Y"]
