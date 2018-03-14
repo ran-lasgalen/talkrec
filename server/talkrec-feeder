@@ -111,10 +111,16 @@ proc getRecognition {soundFile server pipe} {
     }
 }
 
-proc runQueue {} {
-    rereadConfig
-    # Чистим архив от старых файлов
+proc maybeCleanArchive {} {
+    if {![info exists ::lastArchiveClean]} {set ::lastArchiveClean 0}
     set now [clock seconds]
+    # запускаем чистку только до 5 утра
+    if {[clock format $now -format %k] > 5} return
+    # интервал не меньше 23 ч
+    if {$now - $::lastArchiveClean < 82800} return
+    # фиксируем время последнего прогона
+    set ::lastArchiveClean $now
+    safelog {info "запускаем чистку архива записей"}
     foreach arcFile [glob -nocomplain -directory $::soundArchive *] {
 	catchDbg {
 	    if {$now - [file mtime $arcFile] > 14*86400} {
@@ -122,6 +128,14 @@ proc runQueue {} {
 	    }
 	}
     }
+    safelog {info "чистка архива записей завершена"}
+}
+
+proc runQueue {} {
+    rereadConfig
+    # Возможно, чистим архив от старых файлов
+    maybeCleanArchive
+    set now [clock seconds]
     # Пишем отчет о состоянии
     catchDbg {
 	set reportFile [file join [dict get $::config queue] report]
